@@ -1,0 +1,27 @@
+language: csharp
+sudo: required
+dist: trusty
+
+dotnet: 2.0.0
+mono:
+  - 4.8.1
+  - 5.0.0
+  - 5.2.0
+  - latest # => "stable release"
+  - alpha
+  - beta
+  - weekly # => "latest commits"
+os:
+  - linux
+  - osx
+
+script:
+  - ./build.sh
+
+matrix:
+  allow_failures:
+    - mono: latest
+    - mono: alpha
+    - mono: beta
+    - mono: weekly
+    - os: osx # times out too often, disable at own risk

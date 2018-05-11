@@ -1,0 +1,33 @@
+group Server
+  storage: none
+  source https://api.nuget.org/v3/index.json
+
+  nuget FSharp.Core
+  nuget Fable.JsonConverter
+  nuget Fable.Elmish
+
+  clitool Microsoft.DotNet.Watcher.Tools
+
+group Suave
+  storage: none
+  source https://api.nuget.org/v3/index.json
+
+  nuget FSharp.Core
+  nuget Suave
+
+  clitool Microsoft.DotNet.Watcher.Tools
+
+group Client
+  storage: none
+  source https://api.nuget.org/v3/index.json
+
+  nuget Fable.Core
+  nuget Fable.Elmish
+
+  clitool dotnet-fable
+
+group Build
+  source https://api.nuget.org/v3/index.json
+  generate_load_scripts: true
+
+  nuget FAKE
