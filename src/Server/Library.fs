@@ -13,7 +13,6 @@ module Server =
     let private c = JsonConverter()
     let write o = JsonConvert.SerializeObject(o,c)
     let read<'a> str =
-        eprintfn "Type: %A; String: %s" typeof<'a> str
         JsonConvert.DeserializeObject(str,typeof<'a>,c) :?> 'a
 
     let createMailbox action arg (program: ServerProgram<_,_,_,_>)  =

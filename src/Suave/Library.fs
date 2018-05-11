@@ -23,7 +23,6 @@ module Suave =
                     match msg with
                     |Text, data, true ->
                         let str = UTF8.toString data
-                        eprintfn "GOT: %A" str
                         let msg : 'server = Server.read str
                         inbox.Post (S msg)
                     | (Close, _, _) ->
