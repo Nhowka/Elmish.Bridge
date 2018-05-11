@@ -1,3 +1,2 @@
 group Client
-    FSharp.Core
     Fable.Elmish

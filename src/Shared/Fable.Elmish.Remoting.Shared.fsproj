@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Client part of Elmish.Remoting</Description>
+    <Description>Shared part of Elmish.Remoting</Description>
     <PackageProjectUrl>https://github.com/Nhowka/Elmish.Remoting</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Nhowka/Elmish.Remoting.git</RepositoryUrl>
     <PackageLicenseUrl>https://github.com/Nhowka/Elmish.Remoting/blob/master/LICENSE</PackageLicenseUrl>
@@ -14,13 +14,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Library.fs" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Shared\Fable.Elmish.Remoting.Shared.fsproj" />
+    <Compile Include="Msg.fs" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="*.fsproj; *.fs" PackagePath="fable\" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
+
 </Project>

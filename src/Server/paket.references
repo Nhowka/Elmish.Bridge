@@ -1,4 +1,3 @@
 group Server
-    FSharp.Core
     Fable.Elmish
     Fable.JsonConverter

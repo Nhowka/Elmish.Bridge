@@ -1,8 +1,13 @@
-group Server
+group Shared
   storage: none
   source https://api.nuget.org/v3/index.json
 
   nuget FSharp.Core
+
+group Server
+  storage: none
+  source https://api.nuget.org/v3/index.json
+
   nuget Fable.JsonConverter
   nuget Fable.Elmish
 
@@ -12,7 +17,6 @@ group Suave
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget FSharp.Core
   nuget Suave
 
   clitool Microsoft.DotNet.Watcher.Tools
@@ -21,7 +25,6 @@ group Client
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget Fable.Core
   nuget Fable.Elmish
 
   clitool dotnet-fable
