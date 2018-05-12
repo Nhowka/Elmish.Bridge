@@ -5,7 +5,8 @@ module ClientProgram =
   open Fable
   open Fable.Core
   let updateBridge update = fun ms md -> match ms with C msg -> update msg md | _ -> md, Cmd.none
-
+  let onConnectionOpen msg program = {program with onConnectionOpen = Some msg }
+  let onConnectionLost msg program = {program with onConnectionLost = Some msg }
   let fromProgram (program:Program<_,_,Msg<'server,'client>,_>) = {
     program = program
     onConnectionOpen = None
