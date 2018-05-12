@@ -4,6 +4,7 @@ open Elmish
 open Elmish.Remoting
 [<RequireQualifiedAccess>]
 module ClientProgram =
+  let toHMRMsg = Program.UserMsg
   let fromHMRProgram (program:Program<'arg,Program.HMRModel<'model>,Program.HMRMsg<Msg<'server,'client>>,'view>) :
       ClientProgram<'arg,Program.HMRModel<'model>,'server,Program.HMRMsg<'client>,'view> =
       let mapM = function
