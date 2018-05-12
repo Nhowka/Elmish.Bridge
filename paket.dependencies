@@ -3,6 +3,7 @@ group Shared
   source https://api.nuget.org/v3/index.json
 
   nuget FSharp.Core
+  nuget Fable.Elmish
 
 group Server
   storage: none
@@ -21,11 +22,11 @@ group Suave
 
   clitool Microsoft.DotNet.Watcher.Tools
 
-group Client
+group HMR
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget Fable.Elmish
+  nuget Fable.Elmish.HMR
 
   clitool dotnet-fable
 

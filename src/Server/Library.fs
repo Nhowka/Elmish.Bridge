@@ -1,11 +1,5 @@
 namespace Elmish.Remoting
 open Elmish
-type ServerProgram<'arg, 'model, 'server, 'client> = {
-    init : 'arg -> 'model * Cmd<Msg<'server,'client>>
-    update : 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>
-    subscribe : 'model -> Cmd<Msg<'server,'client>>
-    onDisconnection : 'server option
-}
 
 module Server =
     open Newtonsoft.Json
@@ -14,7 +8,6 @@ module Server =
     let write o = JsonConvert.SerializeObject(o,c)
     let read<'a> str =
         JsonConvert.DeserializeObject(str,typeof<'a>,c) :?> 'a
-
     let createMailbox action arg (program: ServerProgram<_,_,_,_>)  =
         let model, msgs = program.init arg
         let inbox = MailboxProcessor.Start(fun (mb:MailboxProcessor<Msg<'server, 'client>>) ->
@@ -48,12 +41,12 @@ module ServerProgram =
             subscribe = fun _ -> Cmd.none
             onDisconnection = None
         }
-    let withSubscription subscribe program =
+    let withSubscription subscribe (program: ServerProgram<_,_,_,_>) =
         let sub model =
             Cmd.batch [ program.subscribe model
                         subscribe model ]
         { program with subscribe = sub }
-    let withConsoleTrace program =
+    let withConsoleTrace (program: ServerProgram<_,_,_,_>) =
         let traceInit arg =
             let initModel,cmd = program.init arg
             eprintfn "Initial state: %A" initModel

@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Server part of Elmish.Remoting</Description>
+    <Description>Elmish.HMR bridge for Elmish.Remoting</Description>
     <PackageProjectUrl>https://github.com/Nhowka/Elmish.Remoting</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Nhowka/Elmish.Remoting.git</RepositoryUrl>
     <PackageLicenseUrl>https://github.com/Nhowka/Elmish.Remoting/blob/master/LICENSE</PackageLicenseUrl>
@@ -19,6 +19,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Shared\Fable.Elmish.Remoting.Shared.fsproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="*.fsproj; *.fs" PackagePath="fable\" />
+  </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
-
 </Project>
