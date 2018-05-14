@@ -62,6 +62,9 @@ Now you can use the MVU approach on the server, minus the V. That still is just 
 For use it, you need a server. There is one for Suave on the `Fable.Elmish.Remoting.Suave` package. You can pass it to the function `ServerProgram.runServerAt`. Here is how it's used:
 
 ```fsharp
+open Elmish
+open Elmish.Remoting
+
 let server =
   ServerProgram.mkProgram init update
   |> ServerProgram.runServerAt Suave.server Shared.endpoint
