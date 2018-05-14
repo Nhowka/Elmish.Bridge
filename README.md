@@ -50,7 +50,8 @@ What's different? Well, now you can send messages to and get messages from the s
 open Elmish
 open Elmish.Remoting
 
-mkProgram init (ClientProgram.updateBridge update) view
+Program.mkProgram init (ClientProgram.updateBridge update) view
+|> Program.withReact "elmish-app"
 |> ClientProgram.fromProgram
 |> ClientProgram.runAt Shared.endpoint
 ```
@@ -78,6 +79,37 @@ let webPart =
   ]
 startWebServer config webPart
 ```
+
+### HMR
+
+The HMR module creates a new kind of message that it's not entirely compatible with the client/server, but you can use `Fable.Elmish.Remoting.HMR` functions to create a compatible `ClientProgram`:
+
+```fsharp
+open Elmish
+open Elmish.Remoting
+open Elmish.HMR
+open Elmish.Remoting.HMR
+
+Program.mkProgram init (ClientProgram.updateBridge update) view
+|> Program.withHMR
+|> Program.withReactUnoptimized "elmish-app"
+|> ClientProgram.fromHMRProgram
+|> ClientProgram.runAt Shared.endpoint
+```
+
+and `ServerProgram`:
+
+```fsharp
+open Elmish.Remoting
+open Elmish.HMR
+open Elmish.Remoting.HMR
+
+let server =
+  ServerProgram.mkProgram init update
+  |> ServerProgram.withHMR
+  |> ServerProgram.runServerAt Suave.server Shared.endpoint
+```
+
 
 ## Anything more?
 
