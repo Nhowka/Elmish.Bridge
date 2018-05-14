@@ -4,7 +4,9 @@ open Elmish
 open Elmish.Remoting
 [<RequireQualifiedAccess>]
 module ClientProgram =
+  /// Maps the `'client` message to a `HMRMsg<'client>` message
   let toHMRMsg = Program.UserMsg
+  /// Creates a `ClientProgram` when the Elmish `Program` uses the HMR module
   let fromHMRProgram (program:Program<'arg,Program.HMRModel<'model>,Program.HMRMsg<Msg<'server,'client>>,'view>) :
       ClientProgram<'arg,Program.HMRModel<'model>,'server,Program.HMRMsg<'client>,'view> =
       let mapM = function
@@ -34,6 +36,8 @@ module ClientProgram =
 
 [<RequireQualifiedAccess>]
 module ServerProgram =
+  /// Send a `HMRMsg<'client>` instead of a `'client` message.
+  /// Used when the client is using the HMR module.
   let withHMR (program:ServerProgram<_,_,_,_>) =
     let mapM = function
       | S a -> S a

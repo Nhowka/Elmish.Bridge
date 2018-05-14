@@ -8,6 +8,8 @@ module Suave =
     open Suave.Sockets
     open Suave.Sockets.Control
     open Suave.WebSocket
+    /// Suave's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
+    /// Creates a `WebPart`
     let server uri arg (program: ServerProgram<_,_,_,_>) : WebPart=
         let ws (webSocket:WebSocket) _ =
             let inbox =

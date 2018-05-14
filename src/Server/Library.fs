@@ -32,6 +32,10 @@ module Server =
         inbox
 [<RequireQualifiedAccess>]
 module ServerProgram =
+    /// Creates a `ServerProgram`
+    /// Takes a `init` : `'arg -> 'model * Cmd<Msg<'server,'client>>`
+    /// and a `update` : `'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`
+    /// Typical program, new commands are produced by `init` and `update` along with the new state.
     let mkProgram
         (init : 'arg -> 'model * Cmd<Msg<'server,'client>>)
         (update : 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>) =
@@ -41,11 +45,14 @@ module ServerProgram =
             subscribe = fun _ -> Cmd.none
             onDisconnection = None
         }
+    /// Subscribe to external source of events.
+    /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
     let withSubscription subscribe (program: ServerProgram<_,_,_,_>) =
         let sub model =
             Cmd.batch [ program.subscribe model
                         subscribe model ]
         { program with subscribe = sub }
+    /// Trace all the updates to the console
     let withConsoleTrace (program: ServerProgram<_,_,_,_>) =
         let traceInit arg =
             let initModel,cmd = program.init arg
@@ -61,11 +68,21 @@ module ServerProgram =
         { program with
             init = traceInit
             update = traceUpdate }
+    /// Server msg passed to the `updated` function when the connection is closed
     let onDisconnected msg program =
         { program with onDisconnection = Some msg}
 
+    /// Creates a websocket loop.
+    /// `server`: function that creates a framework depending server with the program
+    /// `uri`: websocket endpoint
+    /// `arg`: argument to pass to the `init` function.
+    /// `program`: program created with `mkProgram`.
     let runServerAtWith server uri arg  =
         server uri arg
+    /// Creates a websocket loop with `unit` for the `init` function.
+    /// `server`: function that creates a framework depending server with the program
+    /// `uri`: websocket endpoint
+    /// `program`: program created with `mkProgram`.
     let runServerAt server uri =
         server uri ()
 

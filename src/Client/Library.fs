@@ -4,15 +4,24 @@ module ClientProgram =
   open Elmish
   open Fable
   open Fable.Core
+  /// Transforms a ClientProgram's `update` function into an Elmish-compatible `update` function.
+  /// Used with Elmish's `mkProgram`
   let updateBridge update = fun ms md -> match ms with C msg -> update msg md | _ -> md, Cmd.none
+  /// Defines a message to be sent when the client gets connected to the server
   let onConnectionOpen msg program = {program with onConnectionOpen = Some msg }
+  /// Defines a message to be sent when the client gets disconnected to the server
   let onConnectionLost msg program = {program with onConnectionLost = Some msg }
+  /// Creates a `ClientProgram` from an Elmish's `Program`
   let fromProgram (program:Program<_,_,Msg<'server,'client>,_>) = {
     program = program
     onConnectionOpen = None
     onConnectionLost = None}
 
   [<PassGenerics>]
+  /// Creates the program loop with a websocket connection
+  /// `server`: websocket endpoint
+  /// `arg`: argument to the `init` function
+  /// `program`: A `ClientProgram` created with Elmish's `mkProgram` and passed to `ClientProgram.fromProgram`
   let runAtWith server (arg: 'arg) (program: ClientProgram<'arg, 'model, 'server, 'client, 'view>) =
         let (model,cmd) = program.program.init arg
         let url = Fable.Import.Browser.URL.Create(Fable.Import.Browser.window.location.href)
@@ -63,3 +72,11 @@ module ClientProgram =
                 program.program.onError ("Unable to subscribe:", ex)
                 Cmd.none
         sub @ cmd |> List.iter (fun sub -> sub inbox.Post)
+  /// Creates the program loop with a websocket connection passing `unit` to the `init` function
+  /// `server`: websocket endpoint
+  /// `arg`: argument to the `init` function
+  /// `program`: A `ClientProgram` created with Elmish's `mkProgram` and passed to `ClientProgram.fromProgram`
+
+  let runAt server (program: ClientProgram<unit, 'model, 'server, 'client, 'view>) =
+    runAtWith server () program
+
