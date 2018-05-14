@@ -23,4 +23,59 @@ tl;dr You have to relearn the server-side part
 
 ## How to use it?
 
-In progress
+This is Elmish on server with a bridge to the client. You can learn about Elmish [here](https://elmish.github.io/). This assumes that you know how to use Elmish on the client-side.
+
+### Shared
+
+I recommend to keep the messages and the endpoint on a shared file; you don't need to keep the model if you decide that you want the server and client to have different models.
+
+```fsharp
+// Messages processed on the server
+type ServerMsg = 
+    |...
+//Messages processed on the client
+type ClientMsg =
+    |...
+module Shared =
+    let endpoint = "/socket"
+```
+
+The server and the client can return both kind of messages: `S ServerMsg` to define the server and `C ClientMsg` to the client kind. The `update` function now returns a `'model * Cmd<Msg<ServerMsg,ClientMsg>>`.
+
+### Client
+
+What's different? Well, now you can send messages to and get messages from the server. The `update` function that was `'msg -> 'model -> 'model * Cmd<'msg>` now is a `'client -> 'model -> 'model * Cmd<Msg<'server,'client>>` and that is incompatible with the Elmish's `mkProgram`, so you can use the bridge (`ClientProgram.updateBridge update`) to solve that problem. Then before creating the client, create the `ClientProgram` passing the `Program` to the `ClientProgram.fromProgram` function. Finally, use `ClientProgram.runAt` to run the program using the websocket endpoint. More on that later.
+
+```fsharp
+open Elmish
+open Elmish.Remoting
+
+mkProgram init (ClientProgram.updateBridge update) view
+|> ClientProgram.fromProgram
+|> ClientProgram.runAt Shared.endpoint
+```
+
+### Server
+
+Now you can use the MVU approach on the server, minus the V. That still is just a client thing. Create a new server using `ServerProgram.mkProgram init update`. No need for a bridge, it already expects a `'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`. There's also `ServerProgram.withSubscription` that behaves the same as `Program.withSubscription`.
+
+For use it, you need a server. There is one for Suave on the `Fable.Elmish.Remoting.Suave` package. You can pass it to the function `ServerProgram.runServerAt`. Here is how it's used:
+
+```fsharp
+let server =
+  ServerProgram.mkProgram init update
+  |> ServerProgram.runServerAt Suave.server Shared.endpoint
+
+let webPart =
+  choose [
+    server
+    Filters.path "/" >=> Files.browseFileHome "index.html"
+    Files.browseHome
+    RequestErrors.NOT_FOUND "Not found!"
+  ]
+startWebServer config webPart
+```
+
+## Anything more?
+
+This documentation is on an early stage, if you have any questions feel free to open an issue or PR so we can have it in a good shape. I hope you enjoy using it!
