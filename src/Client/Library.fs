@@ -74,9 +74,8 @@ module ClientProgram =
         sub @ cmd |> List.iter (fun sub -> sub inbox.Post)
   /// Creates the program loop with a websocket connection passing `unit` to the `init` function
   /// `server`: websocket endpoint
-  /// `arg`: argument to the `init` function
   /// `program`: A `ClientProgram` created with Elmish's `mkProgram` and passed to `ClientProgram.fromProgram`
-
+  [<PassGenerics>]
   let runAt server (program: ClientProgram<unit, 'model, 'server, 'client, 'view>) =
     runAtWith server () program
 
