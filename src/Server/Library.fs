@@ -5,11 +5,12 @@ module Server =
     open Newtonsoft.Json
     open Fable
     let private c = JsonConverter()
-    let write o = JsonConvert.SerializeObject(o,c)
+    let private write o = JsonConvert.SerializeObject(o,c)
     let read<'a> str =
         JsonConvert.DeserializeObject(str,typeof<'a>,c) :?> 'a
-    let createMailbox action arg (program: ServerProgram<_,_,_,_>)  =
+    let createMailbox action hubInstance arg (program: ServerProgram<'arg,'model,'server,'originalclient,'client>)  =
         let model, msgs = program.init arg
+        let msgs = msgs |> Cmd.map program.mapMsg
         let inbox = MailboxProcessor.Start(fun (mb:MailboxProcessor<Msg<'server, 'client>>) ->
             let rec loop (state:'model) =
                 async {
@@ -17,7 +18,8 @@ module Server =
                     match msg with
                     |S msg ->
                         let model, msgs = program.update msg state
-                        msgs |> List.iter (fun sub -> sub mb.Post)
+                        msgs |> Cmd.map program.mapMsg |> List.iter (fun sub -> sub mb.Post)
+                        hubInstance.Update model
                         return! loop model
                     |C msg ->
                         do! write msg |> action
@@ -25,7 +27,8 @@ module Server =
             loop model)
         let sub =
             try
-                program.subscribe model
+                hubInstance.Add model inbox.Post
+                program.subscribe model |> Cmd.map program.mapMsg
             with _ ->
                 Cmd.none
         sub @ msgs |> List.iter (fun sub -> sub inbox.Post)
@@ -41,19 +44,21 @@ module ServerProgram =
         (update : 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>) =
         {
             init = init
+            mapMsg = id
             update = update
             subscribe = fun _ -> Cmd.none
+            serverHub = None
             onDisconnection = None
         }
     /// Subscribe to external source of events.
     /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
-    let withSubscription subscribe (program: ServerProgram<_,_,_,_>) =
+    let withSubscription subscribe (program: ServerProgram<_,_,_,_,_>) =
         let sub model =
             Cmd.batch [ program.subscribe model
                         subscribe model ]
         { program with subscribe = sub }
     /// Trace all the updates to the console
-    let withConsoleTrace (program: ServerProgram<_,_,_,_>) =
+    let withConsoleTrace (program: ServerProgram<_,_,_,_,_>) =
         let traceInit arg =
             let initModel,cmd = program.init arg
             eprintfn "Initial state: %A" initModel
@@ -68,6 +73,11 @@ module ServerProgram =
         { program with
             init = traceInit
             update = traceUpdate }
+    /// Registers the `ServerHub` that will be used by this socket connections
+    let withServerHub hub program = {
+        program with serverHub = Some hub
+    }
+
     /// Server msg passed to the `updated` function when the connection is closed
     let onDisconnected msg program =
         { program with onDisconnection = Some msg}

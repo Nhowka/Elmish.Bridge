@@ -10,14 +10,15 @@ module Suave =
     open Suave.WebSocket
     /// Suave's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
     /// Creates a `WebPart`
-    let server uri arg (program: ServerProgram<_,_,_,_>) : WebPart=
+    let server uri arg (program: ServerProgram<'arg,'model,'server,'originalclient,'client>) : WebPart=
         let ws (webSocket:WebSocket) _ =
+            let hi = ServerHub.Initialize program.serverHub
             let inbox =
                 Server.createMailbox
                     (fun s ->
                         let resp = s |> System.Text.Encoding.UTF8.GetBytes |> ByteSegment
                         webSocket.send Text resp true |> Async.Ignore)
-                    arg program
+                    hi arg program
             socket {
                 let mutable loop = true
                 while loop do
@@ -26,11 +27,12 @@ module Suave =
                     |Text, data, true ->
                         let str = UTF8.toString data
                         let msg : 'server = Server.read str
-                        inbox.Post (S msg)
+                        (S msg) |> program.mapMsg |> inbox.Post
                     | (Close, _, _) ->
                         let emptyResponse = [||] |> ByteSegment
                         do! webSocket.send Close emptyResponse true
-                        program.onDisconnection |> Option.iter (S>>inbox.Post)
+                        hi.Remove ()
+                        program.onDisconnection |> Option.iter (S>>program.mapMsg>>inbox.Post)
                         loop <- false
                     | _ -> ()}
         path uri >=> handShake ws

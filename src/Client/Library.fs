@@ -55,7 +55,7 @@ module ClientProgram =
         )
         program.program.setState model inbox.Post
         let rec websocket server r =
-            let ws = Fable.Import.Browser.WebSocket.Create server //url.href
+            let ws = Fable.Import.Browser.WebSocket.Create server
             r := Some ws
             ws.onopen <- fun _ ->
                 program.onConnectionOpen |> Option.iter (C >> inbox.Post)

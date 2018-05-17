@@ -3,6 +3,15 @@ open Elmish.HMR
 open Elmish
 open Elmish.Remoting
 [<RequireQualifiedAccess>]
+module Helpers =
+  /// Maps a `'client` msg to a `HMRMsg<'client>`
+  let mapMsg = function
+    | S a -> S a
+    | C a -> C (Program.UserMsg a)
+  /// Creates a `ServerHub` that supports `HMRMsg<'client>`
+  let newServerHub() = ServerHub(mapMsg)
+
+[<RequireQualifiedAccess>]
 module ClientProgram =
   /// Maps the `'client` message to a `HMRMsg<'client>` message
   let toHMRMsg = Program.UserMsg
@@ -38,16 +47,13 @@ module ClientProgram =
 module ServerProgram =
   /// Send a `HMRMsg<'client>` instead of a `'client` message.
   /// Used when the client is using the HMR module.
-  let withHMR (program:ServerProgram<_,_,_,_>) =
-    let mapM = function
-      | S a -> S a
-      | C a -> C (Program.UserMsg a)
-
-    let map (model,cmd) =
-      model, cmd |> Cmd.map mapM
+  /// Note: When using a `ServerHub` you must set it after calling this method
+  let withHMR (program:ServerProgram<'arg,'model,'server,'client,'client>) =
     {
-      init = fun m -> program.init m |> map
-      update = fun ms md -> program.update ms md |> map
-      subscribe = program.subscribe >> (Cmd.map mapM)
+      init = program.init
+      mapMsg = Helpers.mapMsg
+      update = program.update
+      subscribe = program.subscribe
       onDisconnection = program.onDisconnection
+      serverHub = None
     }
