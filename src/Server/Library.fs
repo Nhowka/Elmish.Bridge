@@ -4,6 +4,10 @@ open Elmish
 module Server =
     open Newtonsoft.Json
     open Fable
+
+    type SysMessage<'server,'client> =
+        | Dispose
+        | Msg of Msg<'server,'client>
     let private c = JsonConverter()
     let private write o = JsonConvert.SerializeObject(o,c)
     let read<'a> str =
@@ -11,27 +15,29 @@ module Server =
     let createMailbox action hubInstance arg (program: ServerProgram<'arg,'model,'server,'originalclient,'client>)  =
         let model, msgs = program.init arg
         let msgs = msgs |> Cmd.map program.mapMsg
-        let inbox = MailboxProcessor.Start(fun (mb:MailboxProcessor<Msg<'server, 'client>>) ->
+        let inbox = MailboxProcessor.Start(fun (mb:MailboxProcessor<SysMessage<'server, 'client>>) ->
             let rec loop (state:'model) =
                 async {
                     let! msg = mb.Receive()
                     match msg with
-                    |S msg ->
+                    | Dispose ->
+                        return ()
+                    | Msg (S msg) ->
                         let model, msgs = program.update msg state
-                        msgs |> Cmd.map program.mapMsg |> List.iter (fun sub -> sub mb.Post)
+                        msgs |> Cmd.map program.mapMsg |> List.iter (fun sub -> sub (Msg >> mb.Post))
                         hubInstance.Update model
                         return! loop model
-                    |C msg ->
+                    | Msg (C msg) ->
                         do! write msg |> action
                         return! loop state}
             loop model)
         let sub =
             try
-                hubInstance.Add model inbox.Post
+                hubInstance.Add model (Msg >> inbox.Post)
                 program.subscribe model |> Cmd.map program.mapMsg
             with _ ->
                 Cmd.none
-        sub @ msgs |> List.iter (fun sub -> sub inbox.Post)
+        sub @ msgs |> List.iter (fun sub -> sub (Msg >> inbox.Post))
         inbox
 [<RequireQualifiedAccess>]
 module ServerProgram =

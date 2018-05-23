@@ -1,5 +1,6 @@
 namespace Elmish.Remoting
 
+open System
 [<RequireQualifiedAccess>]
 module Suave =
     open Suave
@@ -27,12 +28,12 @@ module Suave =
                     |Text, data, true ->
                         let str = UTF8.toString data
                         let msg : 'server = Server.read str
-                        (S msg) |> program.mapMsg |> inbox.Post
+                        (S msg) |> program.mapMsg |> Server.Msg |> inbox.Post
                     | (Close, _, _) ->
                         let emptyResponse = [||] |> ByteSegment
                         do! webSocket.send Close emptyResponse true
                         hi.Remove ()
-                        program.onDisconnection |> Option.iter (S>>program.mapMsg>>inbox.Post)
-                        loop <- false
+                        program.onDisconnection |> Option.iter (S >> program.mapMsg >> Server.Msg >> inbox.Post)
+                        loop <- false                        
                     | _ -> ()}
         path uri >=> handShake ws

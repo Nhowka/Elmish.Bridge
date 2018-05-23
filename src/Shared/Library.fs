@@ -74,11 +74,7 @@ type ServerHub<'model, 'server, 'originalclient, 'client>
             mb.Post (SendIf (predicate,msg))
     /// Return the model of all connected users
     member __.GetModels() =
-        #if FABLE_COMPILER
         mb.PostAndAsyncReply GetModels
-        #else
-        mb.PostAndReply GetModels
-        #endif
     member private __.Init() : ServerHubInstance<'model, 'server, 'client> =
         let guid = System.Guid.NewGuid()
 
