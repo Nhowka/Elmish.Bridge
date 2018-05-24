@@ -43,12 +43,16 @@ type ServerHub<'model, 'server, 'originalclient, 'client>
                         | Broadcast msg ->
                           async {
                             data
-                            |> Map.iter (fun _ {Dispatch = d} -> msg |> msgMap |> d  ) } |> Async.Start
+                            |> Map.toArray                            
+                            |> Array.Parallel.iter
+                                (fun (_,{Dispatch = d}) -> msg |> msgMap |> d  ) } |> Async.Start
                         | SendIf(predicate, msg) ->
                           async {
                             data
                             |> Map.filter (fun _ {Model = m} -> predicate m )
-                            |> Map.iter (fun _ {Dispatch = d} -> msg |> msgMap |> d ) } |> Async.Start
+                            |> Map.toArray
+                            |> Array.Parallel.iter
+                                (fun (_,{Dispatch = d}) -> msg |> msgMap |> d  ) } |> Async.Start
                         | GetModels ar ->
                           async {
                             data
