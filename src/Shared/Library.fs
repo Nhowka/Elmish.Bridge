@@ -11,11 +11,12 @@ type ClientProgram<'arg,'model,'server,'client,'view> = {
     onConnectionOpen : 'client option
     onConnectionLost : 'client option
   }
-
+#if !FABLE_COMPILER
 type internal ServerHubData<'model, 'server, 'client> = {
     Model : 'model
     Dispatch : Dispatch<Msg<'server,'client>>
 }
+
 /// Holds functions that will be used when interaction with the `ServerHub`
 type ServerHubInstance<'model, 'server, 'client> = {
     Update : 'model -> unit
@@ -39,8 +40,9 @@ type ServerHub<'model, 'server, 'originalclient, 'client>
                 let rec hub data =
                     async {
                         let! action = inbox.Receive()
+                        eprintfn "Action: %+A\nData: %+A" action data
                         match action with
-                        | Broadcast msg ->
+                        | Broadcast msg ->                          
                           async {
                             data
                             |> Map.toArray                            
@@ -105,7 +107,7 @@ type ServerHub<'model, 'server, 'originalclient, 'client>
             Remove = ignore
             Update = ignore}
         |Some sh -> sh.Init()
-
+#endif
 /// Defines server configuration
 type ServerProgram<'arg, 'model, 'server, 'originalclient, 'client> = {
     init : 'arg -> 'model * Cmd<Msg<'server,'originalclient>>

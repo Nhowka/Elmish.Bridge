@@ -8,9 +8,10 @@ module Helpers =
   let mapMsg = function
     | S a -> S a
     | C a -> C (Program.UserMsg a)
+#if !FABLE_COMPILER    
   /// Creates a `ServerHub` that supports `HMRMsg<'client>`
   let newServerHub() = ServerHub(mapMsg)
-
+#endif
 [<RequireQualifiedAccess>]
 module ClientProgram =
   /// Maps the `'client` message to a `HMRMsg<'client>` message
