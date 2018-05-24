@@ -107,7 +107,7 @@ type ServerHub<'model, 'server, 'originalclient, 'client>
             Remove = ignore
             Update = ignore}
         |Some sh -> sh.Init()
-#endif
+
 /// Defines server configuration
 type ServerProgram<'arg, 'model, 'server, 'originalclient, 'client> = {
     init : 'arg -> 'model * Cmd<Msg<'server,'originalclient>>
@@ -117,5 +117,5 @@ type ServerProgram<'arg, 'model, 'server, 'originalclient, 'client> = {
     serverHub : ServerHub<'model, 'server, 'originalclient, 'client> option
     onDisconnection : 'server option
 }
-
+#endif
 

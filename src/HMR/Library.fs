@@ -43,7 +43,7 @@ module ClientProgram =
            }
       onConnectionOpen = None
       onConnectionLost = None}
-
+#if !FABLE_COMPILER    
 [<RequireQualifiedAccess>]
 module ServerProgram =
   /// Send a `HMRMsg<'client>` instead of a `'client` message.
@@ -58,3 +58,4 @@ module ServerProgram =
       onDisconnection = program.onDisconnection
       serverHub = None
     }
+#endif
