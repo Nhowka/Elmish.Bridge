@@ -40,7 +40,6 @@ type ServerHub<'model, 'server, 'originalclient, 'client>
                 let rec hub data =
                     async {
                         let! action = inbox.Receive()
-                        eprintfn "Action: %+A\nData: %+A" action data
                         match action with
                         | Broadcast msg ->                          
                           async {
@@ -64,8 +63,10 @@ type ServerHub<'model, 'server, 'originalclient, 'client>
                         | AddClient(guid, hd) ->
                             return! hub (data |> Map.add guid hd)
                         | UpdateModel(guid,model) ->
-                            let hd = data |> Map.find guid
-                            return! hub (data |> Map.add guid {hd with Model = model})
+                            let hd = data |> Map.tryFind guid
+                            match hd with
+                            |Some hd -> return! hub (data |> Map.add guid {hd with Model = model})
+                            |None -> return! hub data
                         | DropClient(guid) ->
                             return! hub (data |> Map.remove guid)
                         return! hub data
