@@ -41,17 +41,20 @@ type ServerHub<'model, 'server, 'originalclient, 'client>
                         let! action = inbox.Receive()
                         match action with
                         | Broadcast msg ->
+                          async {
                             data
-                            |> Map.iter (fun _ {Dispatch = d} -> msg |> msgMap |> d  )
+                            |> Map.iter (fun _ {Dispatch = d} -> msg |> msgMap |> d  ) } |> Async.Start
                         | SendIf(predicate, msg) ->
+                          async {
                             data
                             |> Map.filter (fun _ {Model = m} -> predicate m )
-                            |> Map.iter (fun _ {Dispatch = d} -> msg |> msgMap |> d )
+                            |> Map.iter (fun _ {Dispatch = d} -> msg |> msgMap |> d ) } |> Async.Start
                         | GetModels ar ->
+                          async {
                             data
                             |> Map.toList
                             |> List.map (fun (_,{Model=m})-> m )
-                            |> ar.Reply
+                            |> ar.Reply } |> Async.Start
                         | AddClient(guid, hd) ->
                             return! hub (data |> Map.add guid hd)
                         | UpdateModel(guid,model) ->
