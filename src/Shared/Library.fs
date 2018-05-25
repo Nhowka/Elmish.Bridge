@@ -84,7 +84,7 @@ type ServerHub<'model, 'server, 'originalclient, 'client>
             mb.Post (SendIf (predicate,msg))
     /// Return the model of all connected users
     member __.GetModels() =
-        mb.PostAndAsyncReply GetModels
+        mb.PostAndReply GetModels
     member private __.Init() : ServerHubInstance<'model, 'server, 'client> =
         let guid = System.Guid.NewGuid()
 

@@ -37,11 +37,8 @@ module Suave =
                     | _ -> ()}
             async {
                 let! result = skt
-                match result with
-                |Choice1Of2() -> ()
-                |Choice2Of2(_) ->
-                    hi.Remove ()
-                    program.onDisconnection |> Option.iter (S >> program.mapMsg >> Server.Msg >> inbox.Post)
+                program.onDisconnection |> Option.iter (S >> program.mapMsg >> Server.Msg >> inbox.Post)
+                hi.Remove ()
                 return result                
             }
         path uri >=> handShake ws
