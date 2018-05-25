@@ -20,7 +20,8 @@ module Suave =
                         let resp = s |> System.Text.Encoding.UTF8.GetBytes |> ByteSegment
                         webSocket.send Text resp true |> Async.Ignore)
                     hi arg program
-            socket {
+            let skt =
+              socket {
                 let mutable loop = true
                 while loop do
                     let! msg = webSocket.read()
@@ -31,9 +32,13 @@ module Suave =
                         (S msg) |> program.mapMsg |> Server.Msg |> inbox.Post
                     | (Close, _, _) ->
                         let emptyResponse = [||] |> ByteSegment
-                        do! webSocket.send Close emptyResponse true
-                        hi.Remove ()
-                        program.onDisconnection |> Option.iter (S >> program.mapMsg >> Server.Msg >> inbox.Post)
+                        do! webSocket.send Close emptyResponse true                        
                         loop <- false                        
                     | _ -> ()}
+            async {
+                let! result = skt
+                hi.Remove ()
+                program.onDisconnection |> Option.iter (S >> program.mapMsg >> Server.Msg >> inbox.Post)
+                return result                
+            }
         path uri >=> handShake ws
