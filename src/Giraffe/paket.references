@@ -1,0 +1,3 @@
+group Giraffe
+    Giraffe
+    Microsoft.AspNetCore.WebSockets

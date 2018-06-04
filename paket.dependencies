@@ -22,6 +22,16 @@ group Suave
 
   clitool Microsoft.DotNet.Watcher.Tools
 
+group Giraffe
+  storage: none
+  source https://api.nuget.org/v3/index.json
+
+  nuget Giraffe
+  nuget Microsoft.AspNetCore.WebSockets
+
+  clitool Microsoft.DotNet.Watcher.Tools
+
+
 group HMR
   storage: none
   source https://api.nuget.org/v3/index.json
