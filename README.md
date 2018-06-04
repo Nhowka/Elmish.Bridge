@@ -8,6 +8,7 @@ This library creates a bridge between server and client using websockets so you 
 | ------------- | ------------- |
 | Fable.Elmish.Remoting.Client  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Client.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Client) |
 | Fable.Elmish.Remoting.Suave  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Suave.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Suave)  |
+| Fable.Elmish.Remoting.Giraffe  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Giraffe.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Giraffe)  |
 | Fable.Elmish.Remoting.HMR  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.HMR.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.HMR)  |
 
 ## Why?
