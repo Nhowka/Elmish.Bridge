@@ -32,7 +32,7 @@ I recommend to keep the messages and the endpoint on a shared file; you don't ne
 
 ```fsharp
 // Messages processed on the server
-type ServerMsg = 
+type ServerMsg =
     |...
 //Messages processed on the client
 type ClientMsg =
@@ -61,7 +61,9 @@ Program.mkProgram init (ClientProgram.updateBridge update) view
 
 Now you can use the MVU approach on the server, minus the V. That still is just a client thing. Create a new server using `ServerProgram.mkProgram init update`. No need for a bridge, it already expects a `'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`. There's also `ServerProgram.withSubscription` that behaves the same as `Program.withSubscription`.
 
-For use it, you need a server. There is one for Suave on the `Fable.Elmish.Remoting.Suave` package. You can pass it to the function `ServerProgram.runServerAt`. Here is how it's used:
+For use it, you need a server. There is one for Suave on the `Fable.Elmish.Remoting.Suave` package and another for Giraffe and Saturn on the `Fable.Elmish.Remoting.Giraffe` package. You can pass it to the function `ServerProgram.runServerAt`. Here is how it's used:
+
+- Suave
 
 ```fsharp
 open Elmish
@@ -75,11 +77,109 @@ let webPart =
   choose [
     server
     Filters.path "/" >=> Files.browseFileHome "index.html"
-    Files.browseHome
-    RequestErrors.NOT_FOUND "Not found!"
   ]
 startWebServer config webPart
 ```
+
+- Giraffe
+
+```fsharp
+open Elmish
+open Elmish.Remoting
+
+let server =
+  ServerProgram.mkProgram init update
+  |> ServerProgram.runServerAt Giraffe.server Shared.endpoint
+
+let webApp =
+  choose [
+    server
+    route "/" >=> htmlFile "/pages/index.html" ]
+
+let configureApp (app : IApplicationBuilder) =
+  app
+    .UseWebSockets()
+    .UseGiraffe webApp
+
+let configureServices (services : IServiceCollection) =
+  services.AddGiraffe() |> ignore
+
+WebHostBuilder()
+  .UseKestrel()
+  .Configure(Action<IApplicationBuilder> configureApp)
+  .ConfigureServices(configureServices)
+  .Build()
+  .Run()
+```
+
+- Saturn
+
+```fsharp
+open Elmish
+open Elmish.Remoting
+
+let server =
+  ServerProgram.mkProgram init update
+  |> ServerProgram.runServerAt Giraffe.server Shared.endpoint
+
+let webApp =
+  choose [
+    server
+    route "/" >=> htmlFile "/pages/index.html" ]
+
+let app =
+  application {
+    router server
+    disable_diagnostics
+    app_config Giraffe.useWebSockets
+    url uri
+  }
+
+run app
+```
+
+### ServerHub
+
+WebSockets are even better when you use that communication power to send messages between clients. No library would be complete without help to broadcast messages or send a message to an specific client. That's where the `ServerHub` comes in! It is a very simple class that worries about keeping the information about all the connected clients so you don't have to.
+
+Create a new `ServerHub` using:
+
+```fsharp
+let hub = ServerHub.New()
+```
+
+then you can use it on your server:
+
+```fsharp
+ServerProgram.mkProgram init update
+|> ServerProgram.withServerHub hub
+|> ServerProgram.runServerAt server Shared.endpoint
+```
+
+It has three functions:
+* `Broadcast`
+
+    Send a message to anyone connected:
+    ```fsharp
+      hub.Broadcast (C (NewMessage "Hello, everyone!"))
+    ```
+
+* `SendIf`
+
+    Send a message to anyone whose model satisfies a predicate.
+    ```fsharp
+      hub.SendIf (function {Gender = Female} -> true | _ -> false) (C (NewMessage "Hello, ladies!"))
+    ```
+
+* `GetModels`
+
+    Gets a list with all models of all connected clients.
+    ```fsharp
+      let users = hub.GetModels() |> List.map (function {Name = n} -> n)
+      hub.Broadcast (C (ConnectedUsers users))
+    ```
+
+These functions were enough when creating a simple chat, but let me know if you feel limited having only them!
 
 ### HMR
 
@@ -111,6 +211,15 @@ let server =
   |> ServerProgram.runServerAt Suave.server Shared.endpoint
 ```
 
+and `ServerHub`:
+
+```fsharp
+open Elmish.Remoting
+open Elmish.HMR
+open Elmish.Remoting.HMR
+
+let hub = Helpers.newServerHub()
+```
 
 ## Anything more?
 
