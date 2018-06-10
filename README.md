@@ -10,6 +10,7 @@ This library creates a bridge between server and client using websockets so you 
 | Fable.Elmish.Remoting.Suave  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Suave.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Suave)  |
 | Fable.Elmish.Remoting.Giraffe  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Giraffe.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Giraffe)  |
 | Fable.Elmish.Remoting.HMR  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.HMR.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.HMR)  |
+| Fable.Elmish.Remoting.Browser  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Browser.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Browser)  |
 
 ## Why?
 
@@ -45,16 +46,15 @@ The server and the client can return both kind of messages: `S ServerMsg` to def
 
 ### Client
 
-What's different? Well, now you can send messages to and get messages from the server. The `update` function that was `'msg -> 'model -> 'model * Cmd<'msg>` now is a `'client -> 'model -> 'model * Cmd<Msg<'server,'client>>` and that is incompatible with the Elmish's `mkProgram`, so you can use the bridge (`ClientProgram.updateBridge update`) to solve that problem. Then before creating the client, create the `ClientProgram` passing the `Program` to the `ClientProgram.fromProgram` function. Finally, use `ClientProgram.runAt` to run the program using the websocket endpoint. More on that later.
+What's different? Well, now you can send messages to and get messages from the server. The `update` function that was `'msg -> 'model -> 'model * Cmd<'msg>` now is a `'client -> 'model -> 'model * Cmd<Msg<'server,'client>>` and that is incompatible with the Elmish's `mkProgram`, so you can use the function `RemoteProgram.mkProgram` instead. Now to pass functions that uses Elmish's `Program` you can use the helper `RemoteProgram.programBridge`
 
 ```fsharp
 open Elmish
 open Elmish.Remoting
 
-Program.mkProgram init (ClientProgram.updateBridge update) view
-|> Program.withReact "elmish-app"
-|> ClientProgram.fromProgram
-|> ClientProgram.runAt Shared.endpoint
+RemoteProgram.mkProgram init (ClientProgram.updateBridge update) view
+|> RemoteProgram.programBridge (Program.withReact "elmish-app")
+|> RemoteProgram.runAt Shared.endpoint
 ```
 
 ### Server
@@ -181,44 +181,23 @@ It has three functions:
 
 These functions were enough when creating a simple chat, but let me know if you feel limited having only them!
 
-### HMR
+### HMR / Browser
 
-The HMR module creates a new kind of message that it's not entirely compatible with the client/server, but you can use `Fable.Elmish.Remoting.HMR` functions to create a compatible `ClientProgram`:
+The HMR and Navigation module creates a new kind of message , but you can use `Fable.Elmish.Remoting.HMR` / `Fable.Elmish.Remoting.Broswer` helpers on the function `RemoteProgram.programBridgeWithMsgMapping` to create a compatible `ClientProgram`:
 
 ```fsharp
 open Elmish
 open Elmish.Remoting
+open Elmish.Remoting.Browser
+open Elmish.Browser.Navigation
 open Elmish.HMR
 open Elmish.Remoting.HMR
 
-Program.mkProgram init (ClientProgram.updateBridge update) view
-|> Program.withHMR
-|> Program.withReactUnoptimized "elmish-app"
-|> ClientProgram.fromHMRProgram
-|> ClientProgram.runAt Shared.endpoint
-```
-
-and `ServerProgram`:
-
-```fsharp
-open Elmish.Remoting
-open Elmish.HMR
-open Elmish.Remoting.HMR
-
-let server =
-  ServerProgram.mkProgram init update
-  |> ServerProgram.withHMR
-  |> ServerProgram.runServerAt Suave.server Shared.endpoint
-```
-
-and `ServerHub`:
-
-```fsharp
-open Elmish.Remoting
-open Elmish.HMR
-open Elmish.Remoting.HMR
-
-let hub = Helpers.newServerHub()
+RemoteProgram.mkProgram init update view
+|> RemoteProgram.programBridgeWithMsgMapping RemoteProgram.HMRMsgMapping Program.withHMR
+|> RemoteProgram.programBridgeWithMsgMapping RemoteProgram.NavigableMapping (Program.toNavigable Pages.urlParser urlUpdate)
+|> RemoteProgram.programBridge (Program.withReact "elmish-app")
+|> RemoteProgram.runAt Shared.endpoint
 ```
 
 ## Anything more?
