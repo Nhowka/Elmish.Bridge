@@ -52,7 +52,7 @@ What's different? Well, now you can send messages to and get messages from the s
 open Elmish
 open Elmish.Remoting
 
-RemoteProgram.mkProgram init (ClientProgram.updateBridge update) view
+RemoteProgram.mkProgram init update view
 |> RemoteProgram.programBridge (Program.withReact "elmish-app")
 |> RemoteProgram.runAt Shared.endpoint
 ```
