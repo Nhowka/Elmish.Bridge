@@ -1,0 +1,2 @@
+group Browser
+    Fable.Elmish.Browser

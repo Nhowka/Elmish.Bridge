@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Suave server for Elmish.Remoting</Description>
+    <Description>Elmish.Browser bridge for Elmish.Remoting</Description>
     <PackageProjectUrl>https://github.com/Nhowka/Elmish.Remoting</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Nhowka/Elmish.Remoting.git</RepositoryUrl>
     <PackageLicenseUrl>https://github.com/Nhowka/Elmish.Remoting/blob/master/LICENSE</PackageLicenseUrl>
@@ -16,10 +16,11 @@
   <ItemGroup>
     <Compile Include="Library.fs" />
   </ItemGroup>
-
   <ItemGroup>
-    <ProjectReference Include="..\Server\Fable.Elmish.Remoting.Server.fsproj" />
+    <ProjectReference Include="..\Shared\Fable.Elmish.Remoting.Shared.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="*.fsproj; *.fs" PackagePath="fable\" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
-
 </Project>

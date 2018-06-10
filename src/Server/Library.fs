@@ -1,6 +1,112 @@
 namespace Elmish.Remoting
 open Elmish
 
+type internal ServerHubData<'model, 'server, 'client> = {
+    Model : 'model
+    Dispatch : Dispatch<Msg<'server,'client>>
+}
+
+/// Holds functions that will be used when interaction with the `ServerHub`
+type ServerHubInstance<'model, 'server, 'client> = {
+    Update : 'model -> unit
+    Add : 'model -> Dispatch<Msg<'server, 'client>> -> unit
+    Remove : unit -> unit
+}
+
+type internal ServerHubMessages<'model, 'server, 'client> =
+    | Broadcast of Msg<'server,'client>
+    | SendIf of ('model -> bool) *  Msg<'server,'client>
+    | GetModels of AsyncReplyChannel<'model list>
+    | AddClient of System.Guid * ServerHubData<'model, 'server, 'client>
+    | UpdateModel of System.Guid * 'model
+    | DropClient of System.Guid
+/// Holds the data of all connected clients
+type ServerHub<'model, 'server, 'client>() =
+    let mb =
+        MailboxProcessor.Start(
+           fun inbox ->
+                let rec hub data =
+                    async {
+                        let! action = inbox.Receive()
+                        match action with
+                        | Broadcast msg ->
+                          async {
+                            data
+                            |> Map.toArray
+                            |> Array.Parallel.iter
+                                (fun (_,{Dispatch = d}) -> msg |> d  ) } |> Async.Start
+                        | SendIf(predicate, msg) ->
+                          async {
+                            data
+                            |> Map.toArray
+                            |> Array.Parallel.iter
+                                (fun (_,{Model = m; Dispatch = d}) ->
+                                    if predicate m then
+                                        msg |> d  ) } |> Async.Start
+                        | GetModels ar ->
+                          async {
+                            data
+                            |> Map.toList
+                            |> List.map (fun (_,{Model = m})-> m )
+                            |> ar.Reply } |> Async.Start
+                        | AddClient(guid, hd) ->
+                            return! hub (data |> Map.add guid hd)
+                        | UpdateModel(guid,model) ->
+                            let hd = data |> Map.tryFind guid
+                            match hd with
+                            |Some hd -> return! hub (data |> Map.add guid {hd with Model = model})
+                            |None -> return! hub data
+                        | DropClient(guid) ->
+                            return! hub (data |> Map.remove guid)
+                        return! hub data
+                    }
+                hub Map.empty)
+
+    /// Creates a new `ServerHub`
+    static member New() : ServerHub<'a,'b,'c> = ServerHub()
+    /// Send message for all connected users
+    member __.Broadcast(msg) =
+        mb.Post (Broadcast msg)
+    /// Send message for all connected users if their `model` passes the predicate
+    member __.SendIf =
+        fun predicate msg ->
+            mb.Post (SendIf (predicate,msg))
+    /// Return the model of all connected users
+    member __.GetModels() =
+        mb.PostAndReply GetModels
+    member private __.Init() : ServerHubInstance<'model, 'server, 'client> =
+        let guid = System.Guid.NewGuid()
+
+        let add =
+            fun model dispatch ->
+                mb.Post (AddClient (guid,{Model=model;Dispatch=dispatch}))
+        let remove =
+            fun () ->
+                mb.Post (DropClient guid)
+        let update =
+            fun model ->
+                mb.Post (UpdateModel (guid,model))
+
+        {Add = add; Remove=remove; Update=update}
+    /// Used to create a default `ServerHubInstance` that does nothing when the `ServerHub` is not set
+    static member Initialize(sh:ServerHub<'model, 'server, 'client> option)  =
+        match sh with
+        |None ->
+          {
+            Add = fun _ _ -> ()
+            Remove = ignore
+            Update = ignore}
+        |Some sh -> sh.Init()
+
+/// Defines server configuration
+type ServerProgram<'arg, 'model, 'server, 'client> = {
+    init : 'arg -> 'model * Cmd<Msg<'server,'client>>
+    update : 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>
+    subscribe : 'model -> Cmd<Msg<'server,'client>>
+    serverHub : ServerHub<'model, 'server, 'client> option
+    onDisconnection : 'server option
+}
+
 module Server =
     open Newtonsoft.Json
     open Fable
@@ -12,9 +118,8 @@ module Server =
     let private write o = JsonConvert.SerializeObject(o,c)
     let read<'a> str =
         JsonConvert.DeserializeObject(str,typeof<'a>,c) :?> 'a
-    let createMailbox action hubInstance arg (program: ServerProgram<'arg,'model,'server,'originalclient,'client>)  =
+    let createMailbox action hubInstance arg (program: ServerProgram<'arg,'model,'server,'client>)  =
         let model, msgs = program.init arg
-        let msgs = msgs |> Cmd.map program.mapMsg
         let inbox = MailboxProcessor.Start(fun (mb:MailboxProcessor<SysMessage<'server, 'client>>) ->
             let rec loop (state:'model) =
                 async {
@@ -24,7 +129,7 @@ module Server =
                         return ()
                     | Msg (S msg) ->
                         let model, msgs = program.update msg state
-                        msgs |> Cmd.map program.mapMsg |> List.iter (fun sub -> sub (Msg >> mb.Post))
+                        msgs |> List.iter (fun sub -> sub (Msg >> mb.Post))
                         hubInstance.Update model
                         return! loop model
                     | Msg (C msg) ->
@@ -34,7 +139,7 @@ module Server =
         let sub =
             try
                 hubInstance.Add model (Msg >> inbox.Post)
-                program.subscribe model |> Cmd.map program.mapMsg
+                program.subscribe model
             with _ ->
                 Cmd.none
         sub @ msgs |> List.iter (fun sub -> sub (Msg >> inbox.Post))
@@ -50,7 +155,6 @@ module ServerProgram =
         (update : 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>) =
         {
             init = init
-            mapMsg = id
             update = update
             subscribe = fun _ -> Cmd.none
             serverHub = None
@@ -58,13 +162,13 @@ module ServerProgram =
         }
     /// Subscribe to external source of events.
     /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
-    let withSubscription subscribe (program: ServerProgram<_,_,_,_,_>) =
+    let withSubscription subscribe (program: ServerProgram<_,_,_,_>) =
         let sub model =
             Cmd.batch [ program.subscribe model
                         subscribe model ]
         { program with subscribe = sub }
     /// Trace all the updates to the console
-    let withConsoleTrace (program: ServerProgram<_,_,_,_,_>) =
+    let withConsoleTrace (program: ServerProgram<_,_,_,_>) =
         let traceInit arg =
             let initModel,cmd = program.init arg
             eprintfn "Initial state: %A" initModel

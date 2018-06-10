@@ -11,7 +11,7 @@ module Suave =
     open Suave.WebSocket
     /// Suave's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
     /// Creates a `WebPart`
-    let server uri arg (program: ServerProgram<'arg,'model,'server,'originalclient,'client>) : WebPart=
+    let server uri arg (program: ServerProgram<'arg,'model,'server,'client>) : WebPart=
         let ws (webSocket:WebSocket) _ =
             let hi = ServerHub.Initialize program.serverHub
             let inbox =
@@ -29,16 +29,16 @@ module Suave =
                     |Text, data, true ->
                         let str = UTF8.toString data
                         let msg : 'server = Server.read str
-                        (S msg) |> program.mapMsg |> Server.Msg |> inbox.Post
+                        (S msg) |> Server.Msg |> inbox.Post
                     | (Close, _, _) ->
                         let emptyResponse = [||] |> ByteSegment
-                        do! webSocket.send Close emptyResponse true                        
-                        loop <- false                        
+                        do! webSocket.send Close emptyResponse true
+                        loop <- false
                     | _ -> ()}
             async {
                 let! result = skt
-                program.onDisconnection |> Option.iter (S >> program.mapMsg >> Server.Msg >> inbox.Post)
+                program.onDisconnection |> Option.iter (S >> Server.Msg >> inbox.Post)
                 hi.Remove ()
-                return result                
+                return result
             }
         path uri >=> handShake ws

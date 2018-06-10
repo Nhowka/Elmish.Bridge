@@ -12,15 +12,11 @@ group Server
   nuget Fable.JsonConverter
   nuget Fable.Elmish
 
-  clitool Microsoft.DotNet.Watcher.Tools
-
 group Suave
   storage: none
   source https://api.nuget.org/v3/index.json
 
   nuget Suave
-
-  clitool Microsoft.DotNet.Watcher.Tools
 
 group Giraffe
   storage: none
@@ -29,16 +25,17 @@ group Giraffe
   nuget Giraffe
   nuget Microsoft.AspNetCore.WebSockets
 
-  clitool Microsoft.DotNet.Watcher.Tools
-
-
 group HMR
   storage: none
   source https://api.nuget.org/v3/index.json
 
   nuget Fable.Elmish.HMR
 
-  clitool dotnet-fable
+group Browser
+  storage: none
+  source https://api.nuget.org/v3/index.json
+
+  nuget Fable.Elmish.Browser
 
 group Build
   source https://api.nuget.org/v3/index.json

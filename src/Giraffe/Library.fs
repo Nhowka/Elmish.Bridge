@@ -11,7 +11,7 @@ module Giraffe =
     open System.Threading
     /// Giraffe's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
     /// Creates a `HttpHandler`
-    let server uri arg (program: ServerProgram<'arg,'model,'server,'originalclient,'client>) : HttpHandler =
+    let server uri arg (program: ServerProgram<'arg,'model,'server,'client>) : HttpHandler =
         let ws (next:HttpFunc) (ctx:HttpContext) =
           task {
             if ctx.WebSockets.IsWebSocketRequest then
@@ -36,11 +36,11 @@ module Giraffe =
                         |WebSocketMessageType.Text, data, true, _ ->
                             let str = System.Text.Encoding.UTF8.GetString data
                             let msg : 'server = Server.read str
-                            (S msg) |> program.mapMsg |> Server.Msg |> inbox.Post
+                            (S msg) |> Server.Msg |> inbox.Post
                         | _ -> ()
                   }
                 do! skt
-                program.onDisconnection |> Option.iter (S >> program.mapMsg >> Server.Msg >> inbox.Post)
+                program.onDisconnection |> Option.iter (S >> Server.Msg >> inbox.Post)
                 hi.Remove ()
                 return Some ctx
             else
