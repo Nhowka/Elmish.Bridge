@@ -55,6 +55,9 @@ module RemoteProgram =
         onConnectionLost = clientProgram.onConnectionLost
         onConnectionOpen = clientProgram.onConnectionOpen
     }
+
+  /// Defines a bridge to transformation of Elmish programs that change the type of the client message
+  let programBridgeWithMap mapping mapper clientProgram = programBridgeWithMsgMapping mapping mapper clientProgram
   /// Defines a bridge to transformation of Elmish programs that don't change the type of the client message
   let programBridge mapper clientProgram =
     {
