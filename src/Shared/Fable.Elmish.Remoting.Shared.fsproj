@@ -8,7 +8,11 @@
     <PackageIconUrl></PackageIconUrl>
     <PackageTags>fsharp;fable;elmish;remoting;rpc;webserver</PackageTags>
     <Authors>Diego Esmerio</Authors>
+<<<<<<< HEAD
     <Version>0.7.5</Version>
+=======
+    <Version>0.7.2</Version>
+>>>>>>> af1204de38836e48c9a2e4dc68bf08fa6afe9fff
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
