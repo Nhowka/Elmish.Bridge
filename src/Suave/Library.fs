@@ -23,13 +23,18 @@ module Suave =
             let skt =
               socket {
                 let mutable loop = true
+                let mutable buffer = []
                 while loop do
                     let! msg = webSocket.read()
                     match msg with
-                    |Text, data, true ->
-                        let str = UTF8.toString data
-                        let msg : 'server = Server.read str
-                        (S msg) |> Server.Msg |> inbox.Post
+                    |Text, data, complete ->
+                        buffer <- data :: buffer
+                        if complete then
+                            let data = buffer |> List.rev |> Array.concat
+                            let str = UTF8.toString data
+                            let msg : 'server = Server.read str
+                            (S msg) |> Server.Msg |> inbox.Post
+                            buffer <- []
                     | (Close, _, _) ->
                         let emptyResponse = [||] |> ByteSegment
                         do! webSocket.send Close emptyResponse true

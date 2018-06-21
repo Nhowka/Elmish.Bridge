@@ -27,16 +27,21 @@ module Giraffe =
                   task {
                     let buffer = Array.zeroCreate 4096
                     let mutable loop = true
+                    let mutable frame = []
                     while loop do
                         let! msg = webSocket.ReceiveAsync(ArraySegment(buffer), CancellationToken.None )
                         match msg.MessageType,buffer.[0..msg.Count-1],msg.EndOfMessage,msg.CloseStatus with
                         |_,_,_,s when s.HasValue ->
                             do! webSocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null,CancellationToken.None)
                             loop <- false
-                        |WebSocketMessageType.Text, data, true, _ ->
-                            let str = System.Text.Encoding.UTF8.GetString data
-                            let msg : 'server = Server.read str
-                            (S msg) |> Server.Msg |> inbox.Post
+                        |WebSocketMessageType.Text, data, complete, _ ->
+                            frame <- data :: frame
+                            if complete then
+                                let data = frame |> List.rev |> Array.concat
+                                let str = System.Text.Encoding.UTF8.GetString data
+                                let msg : 'server = Server.read str
+                                (S msg) |> Server.Msg |> inbox.Post
+                                frame <- []
                         | _ -> ()
                   }
                 do! skt
