@@ -1,4 +1,4 @@
-namespace Elmish.Remoting
+namespace Elmish.Bridge
 open Elmish
 open System
 /// Defines client configuration
@@ -6,13 +6,14 @@ type ClientProgram<'arg,'model,'server,'originalclient,'client,'view> = {
     program : Program<'arg,'model,'client,'view>
     mapClientMsg : 'originalclient -> 'client
     serverDispatch : Dispatch<'server> option ref
-    onConnectionOpen : 'originalclient option
-    onConnectionLost : 'originalclient option
+    whenDown : 'originalclient option
+    subscribe : unit -> Cmd<Msg<'server,'originalclient>>
+    endpoint : string
   }
 
 [<RequireQualifiedAccess>]
-module RemoteProgram =
-  type ServerMsgException<'msg>(msg) =
+module Bridge =
+  type internal ServerMsgException<'msg>(msg) =
     inherit Exception()
 
     member __.Msg : 'msg = msg
@@ -20,7 +21,7 @@ module RemoteProgram =
   open Fable
   open Fable.Core
   /// Creates a remote program
-  let mkProgram (init:'arg -> 'model * Cmd<Msg<'server,'originalclient>>) (update:'originalclient -> 'model -> 'model * Cmd<Msg<'server,'originalclient>>) (view:'model -> Dispatch<Msg<'server,'originalclient>> -> 'view)
+  let mkClient (init:'arg -> 'model * Cmd<Msg<'server,'originalclient>>) (update:'originalclient -> 'model -> 'model * Cmd<Msg<'server,'originalclient>>) (view:'model -> Dispatch<Msg<'server,'originalclient>> -> 'view)
                 : ClientProgram<'arg,'model,'server,'originalclient,'originalclient,'view> =
 
     let serverDispatch = ref None
@@ -30,7 +31,7 @@ module RemoteProgram =
     let programTransformer (model, cmds) =
         model, cmds |> Cmd.map msgTransformer
 
-    let init = (init>>programTransformer)
+    let init = (init >> programTransformer)
 
     let update msg model =
         let (model, cmds) = update msg model
@@ -40,38 +41,52 @@ module RemoteProgram =
     {
         program = program
         serverDispatch = serverDispatch
+        subscribe = fun () -> Cmd.none
         mapClientMsg = id
-        onConnectionOpen = None
-        onConnectionLost = None
+        whenDown = None
+        endpoint = ""
     }
+  /// Defines the endpoint where the program will run
+  let at endpoint clientProgram =
+    {clientProgram with endpoint = endpoint}
 
-  /// Defines a bridge to transformation of Elmish programs that change the type of the client message
-  let programBridgeWithMsgMapping (mapping:'client -> 'newclient) (mapper:Program<'arg,'model,'client,'view> -> Program<'newarg,'newmodel,'newclient,'newview> ) (clientProgram: ClientProgram<'arg,'model,'server,'originalclient,'client,'view>)
+  /// Defines a transformation of Elmish programs that changes the type of the client message
+  let mapped (mapping:'client -> 'newclient) (mapper:Program<'arg,'model,'client,'view> -> Program<'newarg,'newmodel,'newclient,'newview> ) (clientProgram: ClientProgram<'arg,'model,'server,'originalclient,'client,'view>)
     : ClientProgram<'newarg,'newmodel,'server,'originalclient,'newclient,'newview> =
     {
         program = mapper clientProgram.program
         mapClientMsg = clientProgram.mapClientMsg >> mapping
         serverDispatch = clientProgram.serverDispatch
-        onConnectionLost = clientProgram.onConnectionLost
-        onConnectionOpen = clientProgram.onConnectionOpen
+        subscribe = clientProgram.subscribe
+        whenDown = clientProgram.whenDown
+        endpoint = clientProgram.endpoint
     }
 
-  /// Defines a bridge to transformation of Elmish programs that change the type of the client message
-  let programBridgeWithMap mapping mapper clientProgram = programBridgeWithMsgMapping mapping mapper clientProgram
-  /// Defines a bridge to transformation of Elmish programs that don't change the type of the client message
-  let programBridge mapper clientProgram =
+  /// Defines a transformation of Elmish programs that don't change the type of the client message
+  let simple mapper clientProgram =
     {
         program = mapper clientProgram.program
         mapClientMsg = clientProgram.mapClientMsg
         serverDispatch = clientProgram.serverDispatch
-        onConnectionLost = clientProgram.onConnectionLost
-        onConnectionOpen = clientProgram.onConnectionOpen
+        subscribe = clientProgram.subscribe
+        whenDown = clientProgram.whenDown
+        endpoint = clientProgram.endpoint
     }
 
-  /// Defines a message to be sent when the client gets connected to the server
-  let onConnectionOpen msg program = {program with onConnectionOpen = Some msg }
   /// Defines a message to be sent when the client gets disconnected to the server
-  let onConnectionLost msg program = {program with onConnectionLost = Some msg }
+  let whenDown msg program = { program with whenDown = Some msg }
+
+  /// Defines a subcriber that can send server messages
+  /// That's different from the Elmish subscriber as it takes unit instead of the model as it can be
+  /// changed unpredictably when using the program mappers
+
+  let withSubscription sub program=
+    let sub () =
+        Cmd.batch [
+            program.subscribe ()
+            sub ()
+        ]
+    { program with subscribe = sub }
 
   let private normalize (program: ClientProgram<'arg, 'model, 'server,'originalclient, 'client, 'view>)
         : ClientProgram<'arg, 'model, 'server,'originalclient, Msg<'server,'client>, 'view> =
@@ -104,25 +119,24 @@ module RemoteProgram =
                 setState = clientSetState
                 onError = program.program.onError
             }
+        subscribe = program.subscribe
         mapClientMsg = program.mapClientMsg >> C
         serverDispatch = program.serverDispatch
-        onConnectionLost = program.onConnectionLost
-        onConnectionOpen = program.onConnectionOpen
+        whenDown = program.whenDown
+        endpoint = program.endpoint
     }
-
 
   [<PassGenerics>]
   /// Creates the program loop with a websocket connection
-  /// `server`: websocket endpoint
   /// `arg`: argument to the `init` function
-  /// `program`: A `ClientProgram` created with `RemoteProgram.mkProgram`
-  let runAtWith server (arg: 'arg) (program: ClientProgram<'arg, 'model, 'server,'originalclient, 'client, 'view>) =
+  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkClient`
+  let runWith (arg: 'arg) (program: ClientProgram<'arg, 'model, 'server,'originalclient, 'client, 'view>) =
         let program = normalize program
 
         let (model,cmd) = program.program.init arg
         let url = Fable.Import.Browser.URL.Create(Fable.Import.Browser.window.location.href)
         url.protocol <- url.protocol.Replace ("http","ws")
-        url.pathname <- server
+        url.pathname <- program.endpoint
 
         let ws = ref None
         let safe dispatch =
@@ -140,7 +154,7 @@ module RemoteProgram =
                     let newState =
                         try
                             match msg with
-                            |C msg ->
+                            | C msg ->
                                 let (model',cmd') = program.program.update (C msg) state
                                 program.program.setState model' mb.Post
                                 cmd' |> List.iter (safe mb.Post)
@@ -162,25 +176,68 @@ module RemoteProgram =
         let rec websocket server r =
             let ws = Fable.Import.Browser.WebSocket.Create server
             r := Some ws
-            ws.onopen <- fun _ ->
-                program.onConnectionOpen |> Option.iter (program.mapClientMsg >> inbox.Post)
             ws.onclose <- fun _ ->
-                program.onConnectionLost |> Option.iter (program.mapClientMsg >> inbox.Post)
+                program.whenDown |> Option.iter (program.mapClientMsg >> inbox.Post)
                 Fable.Import.Browser.window.setTimeout(websocket server r, 1000) |> ignore
             ws.onmessage <- fun e ->
                 e.data |> string |> JsInterop.ofJson |> program.mapClientMsg |> inbox.Post
         websocket url.href ws
+        let serverSub =
+            try
+                program.subscribe () |> Cmd.map (function C msg -> program.mapClientMsg msg | S msg -> S msg)
+            with ex ->
+                program.program.onError ("Unable to subscribe:", ex)
+                Cmd.none
         let sub =
             try
                 program.program.subscribe model
             with ex ->
                 program.program.onError ("Unable to subscribe:", ex)
                 Cmd.none
-        sub @ cmd |> List.iter (safe inbox.Post)
-  /// Creates the program loop with a websocket connection passing `unit` to the `init` function
+        serverSub @ sub @ cmd |> List.iter (safe inbox.Post)
+  /// Creates the program loop with a websocket connection passing `unit` to the `init` function at the defined endpoint
   /// `server`: websocket endpoint
-  /// `program`: A `RemoteProgram` created with Elmish.Remotigs's `RemoteProgram.mkProgram`
+  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkClient`
   [<PassGenerics>]
   let runAt server (program: ClientProgram<unit, 'model, 'server,'originalclient,'client, 'view>) =
-    runAtWith server () program
+    runWith () { program with endpoint = server }
 
+  /// Creates the program loop with a websocket connection at the defined endpoint
+  /// `server`: websocket endpoint
+  /// `arg`: argument to the `init` function
+  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkClient`
+  [<PassGenerics>]
+  let runAtWith server arg (program: ClientProgram<unit, 'model, 'server,'originalclient,'client, 'view>) =
+    runWith arg { program with endpoint = server }
+
+  /// Creates the program loop with a websocket connection passing `unit` to the `init` function
+  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkClient`
+  [<PassGenerics>]
+  let run (program: ClientProgram<unit, 'model, 'server,'originalclient,'client, 'view>) =
+    runWith () program
+
+[<AutoOpen>]
+module CE =
+
+    type ClientBuilder<'arg,'model,'server,'originalclient,'client,'view>(init,update,view) =
+        let zero : ClientProgram<'arg,'model,'server,'originalclient,'originalclient,'view> =
+            Bridge.mkClient init update view
+
+        member __.Yield(_) = zero
+        member __.Zero() = zero
+        [<CustomOperation("whenDown")>]
+        member __.WhenDown(clientProgram,whenDown) = Bridge.whenDown whenDown clientProgram
+        [<CustomOperation("simple")>]
+        member __.Simple(clientProgram,mapper) = Bridge.simple mapper clientProgram
+        [<CustomOperation("mapped")>]
+        member __.Mapped(clientProgram,map,mapper) = Bridge.mapped map mapper clientProgram
+        [<CustomOperation("at")>]
+        member __.At(clientProgram,endpoint) = Bridge.at endpoint clientProgram
+        [<CustomOperation("sub")>]
+        member __.WithSubscription(clientProgram,sub) = Bridge.withSubscription sub clientProgram
+        [<CustomOperation("runWith")>]
+        member __.RunWith(clientProgram,arg) = Bridge.runWith arg clientProgram
+        member __.Run(_:unit) = ()
+        member __.Run(clientProgram) = Bridge.run clientProgram
+
+    let bridge init update view = ClientBuilder(init, update, view)

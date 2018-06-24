@@ -1,3 +1,9 @@
+#### 0.9.2
+* Test new API
+
+#### 0.9.0
+* Project renamed to Elmish.Bridge
+
 #### 0.7.5
 * Support longer messages
 

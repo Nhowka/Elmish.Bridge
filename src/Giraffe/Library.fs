@@ -1,4 +1,4 @@
-namespace Elmish.Remoting
+namespace Elmish.Bridge
 
 [<RequireQualifiedAccess>]
 module Giraffe =
@@ -11,7 +11,7 @@ module Giraffe =
     open System.Threading
     /// Giraffe's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
     /// Creates a `HttpHandler`
-    let server uri arg (program: ServerProgram<'arg,'model,'server,'client>) : HttpHandler =
+    let server (program: ServerProgram<'arg,'model,'server,'client,HttpHandler>) arg : HttpHandler =
         let ws (next:HttpFunc) (ctx:HttpContext) =
           task {
             if ctx.WebSockets.IsWebSocketRequest then
@@ -45,14 +45,19 @@ module Giraffe =
                         | _ -> ()
                   }
                 do! skt
-                program.onDisconnection |> Option.iter (S >> Server.Msg >> inbox.Post)
+                program.whenDown |> Option.iter (S >> Server.Msg >> inbox.Post)
                 hi.Remove ()
                 return Some ctx
             else
                 return None
             }
-        route uri >=> ws
+        route program.endpoint >=> ws
 
     /// Prepare app to use websockets
     let useWebSockets (app:IApplicationBuilder) =
         app.UseWebSockets()
+
+[<AutoOpen>]
+module CE =
+
+    let bridge init update = ServerBuilder(Giraffe.server,init,update)

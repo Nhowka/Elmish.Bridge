@@ -1,4 +1,4 @@
-namespace Elmish.Remoting
+namespace Elmish.Bridge
 
 /// Shared type. Separates which messages are processed on the client or the server
 type Msg<'server,'client> =
