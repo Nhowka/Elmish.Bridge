@@ -1,23 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Elmish.HMR bridge for Elmish.Remoting</Description>
-    <PackageProjectUrl>https://github.com/Nhowka/Elmish.Remoting</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/Nhowka/Elmish.Remoting.git</RepositoryUrl>
-    <PackageLicenseUrl>https://github.com/Nhowka/Elmish.Remoting/blob/master/LICENSE</PackageLicenseUrl>
+    <Description>Elmish.HMR bridge for Elmish.Bridge</Description>
+    <PackageProjectUrl>https://github.com/Nhowka/Elmish.Bridge</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Nhowka/Elmish.Bridge.git</RepositoryUrl>
+    <PackageLicenseUrl>https://github.com/Nhowka/Elmish.Bridge/blob/master/LICENSE</PackageLicenseUrl>
     <PackageIconUrl></PackageIconUrl>
     <PackageTags>fsharp;fable;elmish;remoting;rpc;webserver</PackageTags>
     <Authors>Diego Esmerio</Authors>
-    <Version>0.7.5</Version>
+    <Version>0.9.0</Version>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="Library.fs" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Shared\Fable.Elmish.Remoting.Shared.fsproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="*.fsproj; *.fs" PackagePath="fable\" />
