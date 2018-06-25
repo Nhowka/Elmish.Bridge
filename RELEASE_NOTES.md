@@ -1,3 +1,9 @@
+#### 0.9.4
+* Use PassGenerics on client CE-API
+
+#### 0.9.3
+* More consistent API
+
 #### 0.9.2
 * Test new API
 

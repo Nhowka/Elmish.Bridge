@@ -218,7 +218,7 @@ module Bridge =
 
 [<AutoOpen>]
 module CE =
-
+    open Fable.Core
     type ClientBuilder<'arg,'model,'server,'originalclient,'client,'view>(init,update,view) =
         let zero : ClientProgram<'arg,'model,'server,'originalclient,'originalclient,'view> =
             Bridge.mkClient init update view
@@ -236,8 +236,10 @@ module CE =
         [<CustomOperation("sub")>]
         member __.WithSubscription(clientProgram,sub) = Bridge.withSubscription sub clientProgram
         [<CustomOperation("runWith")>]
+        [<PassGenerics>]
         member __.RunWith(clientProgram,arg) = Bridge.runWith arg clientProgram
         member __.Run(_:unit) = ()
+        [<PassGenerics>]
         member __.Run(clientProgram) = Bridge.run clientProgram
 
     let bridge init update view = ClientBuilder(init, update, view)

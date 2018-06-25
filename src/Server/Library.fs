@@ -149,7 +149,8 @@ module Server =
 [<RequireQualifiedAccess>]
 module Bridge =
     /// Creates a `ServerProgram`
-    /// Takes a `init` : `'arg -> 'model * Cmd<Msg<'server,'client>>`
+    /// Takes a `server` : `ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl` with implementation
+    /// a `init` : `'arg -> 'model * Cmd<Msg<'server,'client>>`
     /// and a `update` : `'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`
     /// Typical program, new commands are produced by `init` and `update` along with the new state.
     let mkServer
@@ -172,6 +173,10 @@ module Bridge =
             Cmd.batch [ program.subscribe model
                         subscribe model ]
         { program with subscribe = sub }
+    /// Defines the endpoint where the server will listen for connections
+    let at endpoint program =
+        { program with endpoint = endpoint }
+
     /// Trace all the updates to the console
     let withConsoleTrace (program: ServerProgram<_,_,_,_,_>) =
         let traceInit arg =
@@ -198,15 +203,23 @@ module Bridge =
         { program with whenDown = Some msg}
 
     /// Creates a websocket loop.
-    /// `server`: function that creates a framework depending server with the program
+    /// `arg`: argument to pass to the `init` function.
+    /// `program`: program created with `mkProgram`.
+    let runWith arg program =
+        program.server program arg
+    /// Creates a websocket loop with `unit` for the `init` function.
+    /// `program`: program created with `mkProgram`.
+    let run program =
+        program.server program ()
+
+    /// Creates a websocket loop at the specified endpoint.
     /// `uri`: websocket endpoint
     /// `arg`: argument to pass to the `init` function.
     /// `program`: program created with `mkProgram`.
     let runAtWith uri arg program =
         let program = { program with endpoint = uri }
         program.server program arg
-    /// Creates a websocket loop with `unit` for the `init` function.
-    /// `server`: function that creates a framework depending server with the program
+    /// Creates a websocket loop with `unit` for the `init` function at the specified endpoint.
     /// `uri`: websocket endpoint
     /// `program`: program created with `mkProgram`.
     let runAt uri program =
@@ -217,35 +230,26 @@ module Bridge =
 module CE =
 
     type ServerBuilder<'arg, 'model, 'server, 'client, 'impl>(server: ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl, init, update) =
-        let zero : ServerProgram<'arg, 'model, 'server, 'client, 'impl> =
-          {
-            init = init
-            update = update
-            server = server
-            subscribe = fun _ -> Cmd.none
-            serverHub = None
-            whenDown = None
-            endpoint = ""
-          }
-        member __.Yield(_) = zero
-        member __.Zero() = zero
+
+        member __.Yield(_) = Bridge.mkServer server init update
+        member __.Zero() = Bridge.mkServer server init update
         [<CustomOperation("sub")>]
         member __.Subscribe(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, subscribe) =
-            let sub model =
-                Cmd.batch [ sp.subscribe model
-                            subscribe model ]
-            { sp with subscribe = sub }
+            Bridge.withSubscription subscribe sp
         [<CustomOperation("serverHub")>]
         member __.ServerHub(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, sh) =
-            { sp with serverHub = Some sh}
+            Bridge.withServerHub sh sp
         [<CustomOperation("whenDown")>]
         member __.WhenDown(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, whenDown) =
-            { sp with whenDown = whenDown }
+            Bridge.whenDown whenDown sp
+        [<CustomOperation("consoleTrace")>]
+        member __.WithConsoleTrace(sp:ServerProgram<'arg,'model,'server,'client, 'impl>) =
+            Bridge.withConsoleTrace sp
         [<CustomOperation("at")>]
-        member __.RunAt(sp:ServerProgram<'arg,'model,'server,'client, 'impl>,uri) =
-            { sp with endpoint = uri }
+        member __.RunAt(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, uri) =
+            Bridge.at uri sp
         [<CustomOperation("runWith")>]
-        member __.RunWith(sp:ServerProgram<'arg,'model,'server,'client, 'impl>,arg) =
+        member __.RunWith(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, arg) =
             sp.server sp arg
         member __.Run(impl:'impl) = impl
         member __.Run(sp:ServerProgram<unit,'model,'server,'client, 'impl>) =
