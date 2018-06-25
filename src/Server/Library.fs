@@ -1,4 +1,4 @@
-namespace Elmish.Remoting
+namespace Elmish.Bridge
 open Elmish
 
 type internal ServerHubData<'model, 'server, 'client> = {
@@ -99,12 +99,14 @@ type ServerHub<'model, 'server, 'client>() =
         |Some sh -> sh.Init()
 
 /// Defines server configuration
-type ServerProgram<'arg, 'model, 'server, 'client> = {
+type ServerProgram<'arg, 'model, 'server, 'client, 'impl> = {
     init : 'arg -> 'model * Cmd<Msg<'server,'client>>
     update : 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>
     subscribe : 'model -> Cmd<Msg<'server,'client>>
     serverHub : ServerHub<'model, 'server, 'client> option
-    onDisconnection : 'server option
+    whenDown : 'server option
+    server : ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl
+    endpoint : string
 }
 
 module Server =
@@ -118,7 +120,7 @@ module Server =
     let private write o = JsonConvert.SerializeObject(o,c)
     let read<'a> str =
         JsonConvert.DeserializeObject(str,typeof<'a>,c) :?> 'a
-    let createMailbox action hubInstance arg (program: ServerProgram<'arg,'model,'server,'client>)  =
+    let createMailbox action hubInstance arg (program: ServerProgram<'arg,'model,'server,'client, 'impl>)  =
         let model, msgs = program.init arg
         let inbox = MailboxProcessor.Start(fun (mb:MailboxProcessor<SysMessage<'server, 'client>>) ->
             let rec loop (state:'model) =
@@ -145,12 +147,14 @@ module Server =
         sub @ msgs |> List.iter (fun sub -> sub (Msg >> inbox.Post))
         inbox
 [<RequireQualifiedAccess>]
-module ServerProgram =
+module Bridge =
     /// Creates a `ServerProgram`
-    /// Takes a `init` : `'arg -> 'model * Cmd<Msg<'server,'client>>`
+    /// Takes a `server` : `ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl` with implementation
+    /// a `init` : `'arg -> 'model * Cmd<Msg<'server,'client>>`
     /// and a `update` : `'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`
     /// Typical program, new commands are produced by `init` and `update` along with the new state.
-    let mkProgram
+    let mkServer
+        (server: ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl)
         (init : 'arg -> 'model * Cmd<Msg<'server,'client>>)
         (update : 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>) =
         {
@@ -158,17 +162,23 @@ module ServerProgram =
             update = update
             subscribe = fun _ -> Cmd.none
             serverHub = None
-            onDisconnection = None
+            whenDown = None
+            server = server
+            endpoint = ""
         }
     /// Subscribe to external source of events.
     /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
-    let withSubscription subscribe (program: ServerProgram<_,_,_,_>) =
+    let withSubscription subscribe (program: ServerProgram<_,_,_,_,_>) =
         let sub model =
             Cmd.batch [ program.subscribe model
                         subscribe model ]
         { program with subscribe = sub }
+    /// Defines the endpoint where the server will listen for connections
+    let at endpoint program =
+        { program with endpoint = endpoint }
+
     /// Trace all the updates to the console
-    let withConsoleTrace (program: ServerProgram<_,_,_,_>) =
+    let withConsoleTrace (program: ServerProgram<_,_,_,_,_>) =
         let traceInit arg =
             let initModel,cmd = program.init arg
             eprintfn "Initial state: %A" initModel
@@ -189,21 +199,65 @@ module ServerProgram =
     }
 
     /// Server msg passed to the `updated` function when the connection is closed
-    let onDisconnected msg program =
-        { program with onDisconnection = Some msg}
+    let whenDown msg program =
+        { program with whenDown = Some msg}
 
     /// Creates a websocket loop.
-    /// `server`: function that creates a framework depending server with the program
+    /// `arg`: argument to pass to the `init` function.
+    /// `program`: program created with `mkProgram`.
+    let runWith arg program =
+        program.server program arg
+    /// Creates a websocket loop with `unit` for the `init` function.
+    /// `program`: program created with `mkProgram`.
+    let run program =
+        program.server program ()
+
+    /// Creates a websocket loop at the specified endpoint.
     /// `uri`: websocket endpoint
     /// `arg`: argument to pass to the `init` function.
     /// `program`: program created with `mkProgram`.
-    let runServerAtWith server uri arg  =
-        server uri arg
-    /// Creates a websocket loop with `unit` for the `init` function.
-    /// `server`: function that creates a framework depending server with the program
+    let runAtWith uri arg program =
+        let program = { program with endpoint = uri }
+        program.server program arg
+    /// Creates a websocket loop with `unit` for the `init` function at the specified endpoint.
     /// `uri`: websocket endpoint
     /// `program`: program created with `mkProgram`.
-    let runServerAt server uri =
-        server uri ()
+    let runAt uri program =
+        let program = { program with endpoint = uri }
+        program.server program ()
 
+[<AutoOpen>]
+module CE =
 
+    type ServerBuilder<'arg, 'model, 'server, 'client, 'impl>(server: ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl, init, update) =
+
+        member __.Yield(_) = Bridge.mkServer server init update
+        member __.Zero() = Bridge.mkServer server init update
+        [<CustomOperation("sub")>]
+        /// Takes a `'model -> Cmd<Msg<'server,'client>>` that can dispatch messages at any time
+        /// during the server connection
+        member __.Subscribe(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, subscribe) =
+            Bridge.withSubscription subscribe sp
+        [<CustomOperation("serverHub")>]
+        /// Takes a `ServerHub` that will be used to manage the connections to this server
+        member __.ServerHub(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, sh) =
+            Bridge.withServerHub sh sp
+        [<CustomOperation("whenDown")>]
+        /// Takes a server message that will be dispatched when the client disconnects
+        member __.WhenDown(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, whenDown) =
+            Bridge.whenDown whenDown sp
+        [<CustomOperation("consoleTrace")>]
+        /// Enables console tracing of the received messages and resulting models
+        member __.WithConsoleTrace(sp:ServerProgram<'arg,'model,'server,'client, 'impl>) =
+            Bridge.withConsoleTrace sp
+        [<CustomOperation("at")>]
+        /// Defines the endpoint where the server will listen for client connections
+        member __.RunAt(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, uri) =
+            Bridge.at uri sp
+        [<CustomOperation("runWith")>]
+        /// Defines the `init` argument when it is something other than `unit`
+        member __.RunWith(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, arg) =
+            sp.server sp arg
+        member __.Run(impl:'impl) = impl
+        member __.Run(sp:ServerProgram<unit,'model,'server,'client, 'impl>) =
+             sp.server sp ()

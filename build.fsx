@@ -206,6 +206,9 @@ Target "Release" (fun _ ->
   ==> "DotnetRestore"
   ==> "DotnetBuild"
   ==> "MochaTest"
+  ==> "Release"
+
+"Clean"
   ==> "DotnetPack"
   ==> "Publish"
   ==> "Release"

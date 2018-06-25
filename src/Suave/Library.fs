@@ -1,4 +1,4 @@
-namespace Elmish.Remoting
+namespace Elmish.Bridge
 
 open System
 [<RequireQualifiedAccess>]
@@ -11,7 +11,7 @@ module Suave =
     open Suave.WebSocket
     /// Suave's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
     /// Creates a `WebPart`
-    let server uri arg (program: ServerProgram<'arg,'model,'server,'client>) : WebPart=
+    let server (program: ServerProgram<'arg,'model,'server,'client,WebPart>) arg : WebPart=
         let ws (webSocket:WebSocket) _ =
             let hi = ServerHub.Initialize program.serverHub
             let inbox =
@@ -42,8 +42,13 @@ module Suave =
                     | _ -> ()}
             async {
                 let! result = skt
-                program.onDisconnection |> Option.iter (S >> Server.Msg >> inbox.Post)
+                program.whenDown |> Option.iter (S >> Server.Msg >> inbox.Post)
                 hi.Remove ()
                 return result
             }
-        path uri >=> handShake ws
+        path program.endpoint >=> handShake ws
+
+[<AutoOpen>]
+module CE =
+    /// Creates the Suave compatible server
+    let bridge init update = ServerBuilder(Suave.server,init,update)

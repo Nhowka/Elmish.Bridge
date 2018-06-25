@@ -1,16 +1,16 @@
-# Fable.Elmish.Remoting
+# Elmish.Bridge
 
 This library creates a bridge between server and client using websockets so you can keep the same model-view-update mindset to create the server side model.
 
 ## Available Packages:
 
 | Library  | Version |
-| ------------- | ------------- |
-| Fable.Elmish.Remoting.Client  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Client.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Client) |
-| Fable.Elmish.Remoting.Suave  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Suave.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Suave)  |
-| Fable.Elmish.Remoting.Giraffe  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Giraffe.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Giraffe)  |
-| Fable.Elmish.Remoting.HMR  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.HMR.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.HMR)  |
-| Fable.Elmish.Remoting.Browser  | [![Nuget](https://img.shields.io/nuget/v/Fable.Elmish.Remoting.Browser.svg?colorB=green)](https://www.nuget.org/packages/Fable.Elmish.Remoting.Browser)  |
+| -------- | ------- |
+| Elmish.Bridge.Client  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Client.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Client) |
+| Elmish.Bridge.Suave  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Suave.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Suave)  |
+| Elmish.Bridge.Giraffe  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Giraffe.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Giraffe)  |
+| Elmish.Bridge.HMR  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.HMR.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.HMR)  |
+| Elmish.Bridge.Browser  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Browser.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Browser)  |
 
 ## Why?
 
@@ -46,32 +46,32 @@ The server and the client can return both kind of messages: `S ServerMsg` to def
 
 ### Client
 
-What's different? Well, now you can send messages to and get messages from the server. The `update` function that was `'msg -> 'model -> 'model * Cmd<'msg>` now is a `'client -> 'model -> 'model * Cmd<Msg<'server,'client>>` and that is incompatible with the Elmish's `mkProgram`, so you can use the function `RemoteProgram.mkProgram` instead. Now to pass functions that uses Elmish's `Program` you can use the helper `RemoteProgram.programBridge`
+What's different? Well, now you can send messages to and get messages from the server. The `update` function that was `'msg -> 'model -> 'model * Cmd<'msg>` now is a `'client -> 'model -> 'model * Cmd<Msg<'server,'client>>` and that is incompatible with the Elmish's `mkProgram`, so you can use the `bridge` function to get a computation expression to configure your client. You can pass functions taking the Elmish program with the `simple` operation if it results in the same message type or `mapped` otherwise, taking a mapping function before the program function.
 
 ```fsharp
 open Elmish
-open Elmish.Remoting
+open Elmish.Bridge
 
-RemoteProgram.mkProgram init update view
-|> RemoteProgram.programBridge (Program.withReact "elmish-app")
-|> RemoteProgram.runAt Shared.endpoint
+bridge init update view {
+  simple (Program.withReact "elmish-app")
+  at Shared.endpoint
+}
 ```
 
 ### Server
 
-Now you can use the MVU approach on the server, minus the V. That still is just a client thing. Create a new server using `ServerProgram.mkProgram init update`. No need for a bridge, it already expects a `'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`. There's also `ServerProgram.withSubscription` that behaves the same as `Program.withSubscription`.
-
-For use it, you need a server. There is one for Suave on the `Fable.Elmish.Remoting.Suave` package and another for Giraffe and Saturn on the `Fable.Elmish.Remoting.Giraffe` package. You can pass it to the function `ServerProgram.runServerAt`. Here is how it's used:
+Now you can use the MVU approach on the server, minus the V. That still is just a client thing. There is one configured for Suave on the `Elmish.Bridge.Suave` package and another for Giraffe and Saturn on the `Elmish.Bridge.Giraffe` package. Create a new server using `bridge init update`.
 
 - Suave
 
 ```fsharp
 open Elmish
-open Elmish.Remoting
+open Elmish.Bridge
 
 let server =
-  ServerProgram.mkProgram init update
-  |> ServerProgram.runServerAt Suave.server Shared.endpoint
+  bridge init update {
+    at Shared.endpoint
+  }
 
 let webPart =
   choose [
@@ -88,8 +88,9 @@ open Elmish
 open Elmish.Remoting
 
 let server =
-  ServerProgram.mkProgram init update
-  |> ServerProgram.runServerAt Giraffe.server Shared.endpoint
+  bridge init update {
+    at Shared.endpoint
+  }
 
 let webApp =
   choose [
@@ -119,8 +120,9 @@ open Elmish
 open Elmish.Remoting
 
 let server =
-  ServerProgram.mkProgram init update
-  |> ServerProgram.runServerAt Giraffe.server Shared.endpoint
+  bridge init update {
+    at Shared.endpoint
+  }
 
 let webApp =
   choose [
@@ -151,9 +153,10 @@ let hub = ServerHub.New()
 then you can use it on your server:
 
 ```fsharp
-ServerProgram.mkProgram init update
-|> ServerProgram.withServerHub hub
-|> ServerProgram.runServerAt server Shared.endpoint
+bridge init update {
+  serverHub hub
+  at Shared.endpoint
+}
 ```
 
 It has three functions:
@@ -183,22 +186,45 @@ These functions were enough when creating a simple chat, but let me know if you 
 
 ### HMR / Browser
 
-The HMR and Navigation module creates a new kind of message , but you can use `Fable.Elmish.Remoting.HMR` / `Fable.Elmish.Remoting.Broswer` helpers on the function `RemoteProgram.programBridgeWithMsgMapping` to create a compatible `ClientProgram`:
+The HMR and Navigation module creates a new kind of message , but you can use `Elmish.Bridge.HMR` / `Elmish.Bridge.Broswer` helpers on the `mapped` operation to create a compatible `ClientProgram`:
 
 ```fsharp
 open Elmish
-open Elmish.Remoting
-open Elmish.Remoting.Browser
+open Elmish.Bridge
+open Elmish.Bridge.Browser
 open Elmish.Browser.Navigation
 open Elmish.HMR
-open Elmish.Remoting.HMR
+open Elmish.Bridge.HMR
 
-RemoteProgram.mkProgram init update view
-|> RemoteProgram.programBridgeWithMsgMapping RemoteProgram.HMRMsgMapping Program.withHMR
-|> RemoteProgram.programBridgeWithMsgMapping RemoteProgram.NavigableMapping (Program.toNavigable Pages.urlParser urlUpdate)
-|> RemoteProgram.programBridge (Program.withReact "elmish-app")
-|> RemoteProgram.runAt Shared.endpoint
+bridge init update view {
+  mapped Bridge.HMRMsgMapping Program.withHMR
+  mapped Bridge.NavigableMapping (Program.toNavigable Pages.urlParser urlUpdate)
+  simple (Program.withReact "elmish-app")
+  at Shared.endpoint
+}
 ```
+
+## All operations
+
+A full description and explanation about the arguments can be found on the code and tooltip on the editor
+
+### Client
+
+- `simple` : Pass a function that takes an Elmish Program that don't change the message type
+- `mapped` : Pass a function that takes a message mapping and a function taking the Elmish Program that changes the message according to the mapping
+- `at` : Defines the endpoint where the connection will be made
+- `whenDown` : Defines a message that will be dispatched when the connection is lost
+- `sub` : Modified subscription that can send client and server messages. Takes `unit` instead of the model
+- `runWith` : Defines the argument when the `init` function don't take `unit` as an argument
+
+### Server
+
+- `serverHub` : Defines the `ServerHub` used by the connection
+- `sub` : Defines a subscription
+- `whenDown` : Defines a message to be dispatched when the client disconnects
+- `consoleTrace` : Log the messages and new models to the console
+- `at` : Defines the endpoint where the server will listen to connections
+- `runWith` : Defines the argument when the `init` function don't take `unit` as an argument
 
 ## Anything more?
 
