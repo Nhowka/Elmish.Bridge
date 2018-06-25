@@ -1,6 +1,6 @@
 # Elmish.Bridge
 
-This library creates a bridge between server and client using websockets so you can keep the same model-view-update mindset to create the server side model.
+Formely Elmish.Remoting. This library creates a bridge between server and client using websockets so you can keep the same model-view-update mindset to create the server side model.
 
 ## Available Packages:
 
@@ -85,7 +85,7 @@ startWebServer config webPart
 
 ```fsharp
 open Elmish
-open Elmish.Remoting
+open Elmish.Bridge
 
 let server =
   bridge init update {
@@ -117,7 +117,7 @@ WebHostBuilder()
 
 ```fsharp
 open Elmish
-open Elmish.Remoting
+open Elmish.Bridge
 
 let server =
   bridge init update {
