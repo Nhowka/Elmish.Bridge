@@ -50,4 +50,5 @@ module Suave =
 
 [<AutoOpen>]
 module CE =
+    /// Creates the Suave compatible server
     let bridge init update = ServerBuilder(Suave.server,init,update)

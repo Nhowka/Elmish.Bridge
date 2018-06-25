@@ -234,21 +234,28 @@ module CE =
         member __.Yield(_) = Bridge.mkServer server init update
         member __.Zero() = Bridge.mkServer server init update
         [<CustomOperation("sub")>]
+        /// Takes a `'model -> Cmd<Msg<'server,'client>>` that can dispatch messages at any time
+        /// during the server connection
         member __.Subscribe(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, subscribe) =
             Bridge.withSubscription subscribe sp
         [<CustomOperation("serverHub")>]
+        /// Takes a `ServerHub` that will be used to manage the connections to this server
         member __.ServerHub(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, sh) =
             Bridge.withServerHub sh sp
         [<CustomOperation("whenDown")>]
+        /// Takes a server message that will be dispatched when the client disconnects
         member __.WhenDown(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, whenDown) =
             Bridge.whenDown whenDown sp
         [<CustomOperation("consoleTrace")>]
+        /// Enables console tracing of the received messages and resulting models
         member __.WithConsoleTrace(sp:ServerProgram<'arg,'model,'server,'client, 'impl>) =
             Bridge.withConsoleTrace sp
         [<CustomOperation("at")>]
+        /// Defines the endpoint where the server will listen for client connections
         member __.RunAt(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, uri) =
             Bridge.at uri sp
         [<CustomOperation("runWith")>]
+        /// Defines the `init` argument when it is something other than `unit`
         member __.RunWith(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, arg) =
             sp.server sp arg
         member __.Run(impl:'impl) = impl

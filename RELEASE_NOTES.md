@@ -1,3 +1,6 @@
+#### 0.9.9
+* Code documentation
+
 #### 0.9.4
 * Use PassGenerics on client CE-API
 

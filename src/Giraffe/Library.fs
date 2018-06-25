@@ -59,5 +59,5 @@ module Giraffe =
 
 [<AutoOpen>]
 module CE =
-
+    /// Creates the Giraffe compatible server
     let bridge init update = ServerBuilder(Giraffe.server,init,update)

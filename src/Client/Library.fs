@@ -226,14 +226,22 @@ module CE =
         member __.Yield(_) = zero
         member __.Zero() = zero
         [<CustomOperation("whenDown")>]
+        /// Takes a client message to be send when the connection with the server is lost
         member __.WhenDown(clientProgram,whenDown) = Bridge.whenDown whenDown clientProgram
         [<CustomOperation("simple")>]
+        /// Takes an Elmish `Program<_,_,msg,_> -> Program<_,_,msg,_>` for
+        /// compatibility with Elmish libraries
         member __.Simple(clientProgram,mapper) = Bridge.simple mapper clientProgram
         [<CustomOperation("mapped")>]
+        /// Takes an `msg -> newMsg` Elmish `Program<_,_,msg,_> -> Program<_,_,newMsg,_>` for
+        /// compatibility with Elmish libraries that modify the message type
         member __.Mapped(clientProgram,map,mapper) = Bridge.mapped map mapper clientProgram
         [<CustomOperation("at")>]
+        /// Takes a `string` defining where the client will connect to the server
         member __.At(clientProgram,endpoint) = Bridge.at endpoint clientProgram
         [<CustomOperation("sub")>]
+        /// Takes an `unit -> Cmd<Msg<'server,'client>>` to be possible to send server messages
+        /// reacting to external events
         member __.WithSubscription(clientProgram,sub) = Bridge.withSubscription sub clientProgram
         [<CustomOperation("runWith")>]
         [<PassGenerics>]
@@ -242,4 +250,5 @@ module CE =
         [<PassGenerics>]
         member __.Run(clientProgram) = Bridge.run clientProgram
 
+    /// Creates the client
     let bridge init update view = ClientBuilder(init, update, view)
