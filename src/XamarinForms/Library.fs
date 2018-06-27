@@ -227,7 +227,7 @@ module Bridge =
 
   /// Creates the program loop with a websocket connection using dynamic views
   /// `app`: Xamarin `Application`
-  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkClient`
+  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkDynamicClient`
   let runDynamic app (program: ClientProgram<'model, 'server,'originalclient,'client>) =
     match program.program with
     | DynamicProgram _ ->
@@ -239,13 +239,13 @@ module Bridge =
   /// Creates the program loop with a websocket connection at the defined endpoint using dynamic views
   /// `server`: websocket endpoint
   /// `app`: Xamarin `Application`
-  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkClient`
+  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkDynamicClient`
   let runDynamicAt server app (program: ClientProgram<'model, 'server,'originalclient,'client>) =
     runDynamic app {program with endpoint = server}
 
   /// Creates the program loop with a websocket connection using dynamic views
   /// `app`: Xamarin `Application`
-  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkClient`
+  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkStaticClient`
   let runStatic (program: ClientProgram<'model, 'server,'originalclient,'client>) =
     match program.program with
     | StaticProgram _ ->
@@ -257,7 +257,7 @@ module Bridge =
   /// Creates the program loop with a websocket connection at the defined endpoint using dynamic views
   /// `server`: websocket endpoint
   /// `app`: Xamarin `Application`
-  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkClient`
+  /// `program`: A `ClientProgram` created with Elmish.Bridge's `Bridge.mkStaticClient`
   let runStaticAt server (program: ClientProgram<'model, 'server,'originalclient,'client>) =
     runStatic {program with endpoint = server}
 
