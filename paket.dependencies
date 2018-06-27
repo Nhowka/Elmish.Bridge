@@ -37,6 +37,16 @@ group Browser
 
   nuget Fable.Elmish.Browser
 
+group Xamarin
+  storage: none
+  source https://api.nuget.org/v3/index.json
+
+  nuget Elmish.XamarinForms 0.8.0
+  nuget FSharp.Core
+  nuget Xamarin.Forms 3.0.0.482510
+  nuget System.Net.WebSockets.Client
+  nuget Fable.JsonConverter
+
 group Build
   source https://api.nuget.org/v3/index.json
   generate_load_scripts: true

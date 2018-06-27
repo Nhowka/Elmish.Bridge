@@ -1,0 +1,6 @@
+group Xamarin
+    Elmish.XamarinForms
+    FSharp.Core
+    Xamarin.Forms
+    System.Net.WebSockets.Client
+    Fable.JsonConverter
