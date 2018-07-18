@@ -181,7 +181,10 @@ module Bridge =
                 Fable.Import.Browser.window.setTimeout(websocket server r, 1000) |> ignore
             ws.onmessage <- fun e ->
                 e.data |> string |> JsInterop.ofJson |> program.mapClientMsg |> inbox.Post
-        websocket url.href ws
+
+        let urlNoHash = (url.href.Split '#').[0] 
+        websocket urlNoHash ws
+
         let serverSub =
             try
                 program.subscribe () |> Cmd.map (function C msg -> program.mapClientMsg msg | S msg -> S msg)
