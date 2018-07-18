@@ -1,3 +1,6 @@
+#### 0.9.10
+* Support for '#'-s in the navigation address (by @cotyar)
+
 #### 0.9.9
 * Code documentation
 
