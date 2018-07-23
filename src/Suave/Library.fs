@@ -1,6 +1,5 @@
 namespace Elmish.Bridge
 
-open System
 [<RequireQualifiedAccess>]
 module Suave =
     open Suave
@@ -11,15 +10,17 @@ module Suave =
     open Suave.WebSocket
     /// Suave's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
     /// Creates a `WebPart`
-    let server (program: ServerProgram<'arg,'model,'server,'client,WebPart>) arg : WebPart=
+    let server (program: BridgeServer<'arg, 'model, 'server, 'client, WebPart>) :
+        ServerCreator<'model, 'server, 'client, WebPart> =
+      fun endpoint inboxCreator ->
+
         let ws (webSocket:WebSocket) _ =
-            let hi = ServerHub.Initialize program.serverHub
+            let hi = ServerHub.Initialize program.ServerHub
             let inbox =
-                Server.createMailbox
-                    (fun s ->
+              inboxCreator
+                (fun (s:string) ->
                         let resp = s |> System.Text.Encoding.UTF8.GetBytes |> ByteSegment
-                        webSocket.send Text resp true |> Async.Ignore)
-                    hi arg program
+                        webSocket.send Text resp true |> Async.Ignore) hi
             let skt =
               socket {
                 let mutable loop = true
@@ -32,8 +33,8 @@ module Suave =
                         if complete then
                             let data = buffer |> List.rev |> Array.concat
                             let str = UTF8.toString data
-                            let msg : 'server = Server.read str
-                            (S msg) |> Server.Msg |> inbox.Post
+                            let msg = program.Read str
+                            msg |> Option.iter(Choice1Of2 >> inbox.Post)
                             buffer <- []
                     | (Close, _, _) ->
                         let emptyResponse = [||] |> ByteSegment
@@ -42,13 +43,8 @@ module Suave =
                     | _ -> ()}
             async {
                 let! result = skt
-                program.whenDown |> Option.iter (S >> Server.Msg >> inbox.Post)
+                program.WhenDown |> Option.iter (Choice1Of2 >> inbox.Post)
                 hi.Remove ()
                 return result
             }
-        path program.endpoint >=> handShake ws
-
-[<AutoOpen>]
-module CE =
-    /// Creates the Suave compatible server
-    let bridge init update = ServerBuilder(Suave.server,init,update)
+        path endpoint >=> handShake ws

@@ -1,27 +1,32 @@
 namespace Elmish.Bridge
 open Elmish
 
+
 type internal ServerHubData<'model, 'server, 'client> = {
     Model : 'model
-    Dispatch : Dispatch<Msg<'server,'client>>
+    ServerDispatch : Dispatch<'server>
+    ClientDispatch : Dispatch<'client>
 }
 
 /// Holds functions that will be used when interaction with the `ServerHub`
 type ServerHubInstance<'model, 'server, 'client> = {
     Update : 'model -> unit
-    Add : 'model -> Dispatch<Msg<'server, 'client>> -> unit
+    Add : 'model -> Dispatch<'server> -> Dispatch<'client> -> unit
     Remove : unit -> unit
 }
 
 type internal ServerHubMessages<'model, 'server, 'client> =
-    | Broadcast of Msg<'server,'client>
-    | SendIf of ('model -> bool) *  Msg<'server,'client>
+    | ServerBroadcast of 'server
+    | ClientBroadcast of 'client
+    | ServerSendIf of ('model -> bool) * 'server
+    | ClientSendIf of ('model -> bool) * 'client
     | GetModels of AsyncReplyChannel<'model list>
     | AddClient of System.Guid * ServerHubData<'model, 'server, 'client>
     | UpdateModel of System.Guid * 'model
     | DropClient of System.Guid
 /// Holds the data of all connected clients
 type ServerHub<'model, 'server, 'client>() =
+    let mutable mappings : Map<string,(obj->'client)>= Map.empty
     let mb =
         MailboxProcessor.Start(
            fun inbox ->
@@ -29,18 +34,32 @@ type ServerHub<'model, 'server, 'client>() =
                     async {
                         let! action = inbox.Receive()
                         match action with
-                        | Broadcast msg ->
+                        | ServerBroadcast msg ->
                           async {
                             data
                             |> Map.toArray
                             |> Array.Parallel.iter
-                                (fun (_,{Dispatch = d}) -> msg |> d  ) } |> Async.Start
-                        | SendIf(predicate, msg) ->
+                                (fun (_,{ServerDispatch = d}) -> msg |> d ) } |> Async.Start
+                        | ClientBroadcast msg ->
                           async {
                             data
                             |> Map.toArray
                             |> Array.Parallel.iter
-                                (fun (_,{Model = m; Dispatch = d}) ->
+                                (fun (_,{ClientDispatch = d}) -> msg |> d ) } |> Async.Start
+                        | ServerSendIf(predicate, msg) ->
+                          async {
+                            data
+                            |> Map.toArray
+                            |> Array.Parallel.iter
+                                (fun (_,{Model = m; ServerDispatch = d}) ->
+                                    if predicate m then
+                                        msg |> d  ) } |> Async.Start
+                        | ClientSendIf(predicate, msg) ->
+                          async {
+                            data
+                            |> Map.toArray
+                            |> Array.Parallel.iter
+                                (fun (_,{Model = m; ClientDispatch = d}) ->
                                     if predicate m then
                                         msg |> d  ) } |> Async.Start
                         | GetModels ar ->
@@ -64,13 +83,25 @@ type ServerHub<'model, 'server, 'client>() =
 
     /// Creates a new `ServerHub`
     static member New() : ServerHub<'a,'b,'c> = ServerHub()
+    /// Register the client mappings so inner messages can be transformed to the top-level `update` message
+    member this.Register<'Inner,'client> (map: 'Inner -> 'client) =
+        mappings <- mappings |> Map.add typeof<'Inner>.FullName (unbox<obj -> 'client> map)
+        this
+
     /// Send message for all connected users
-    member __.Broadcast(msg) =
-        mb.Post (Broadcast msg)
+    member __.Broadcast<'inner>(msg:'inner) =
+        match mappings |> Map.tryFind typeof<'inner>.FullName with
+        |Some f -> mb.Post (ClientBroadcast (f msg))
+        |None -> ()
+    member __.Broadcast(msg:'client) = mb.Post (ClientBroadcast msg)
+    member __.Broadcast(msg:'server) = mb.Post (ServerBroadcast msg)
     /// Send message for all connected users if their `model` passes the predicate
-    member __.SendIf =
-        fun predicate msg ->
-            mb.Post (SendIf (predicate,msg))
+    member __.SendIf(predicate,msg:'server) = mb.Post (ServerSendIf (predicate,msg))
+    member __.SendIf<'inner>(predicate,msg:'inner)=
+        match mappings |> Map.tryFind typeof<'inner>.FullName with
+        |Some f -> mb.Post (ClientSendIf (predicate,f msg))
+        |None -> ()
+    member __.SendIf(predicate,msg:'client) = mb.Post (ClientSendIf (predicate,msg))
     /// Return the model of all connected users
     member __.GetModels() =
         mb.PostAndReply GetModels
@@ -78,8 +109,8 @@ type ServerHub<'model, 'server, 'client>() =
         let guid = System.Guid.NewGuid()
 
         let add =
-            fun model dispatch ->
-                mb.Post (AddClient (guid,{Model=model;Dispatch=dispatch}))
+            fun model serverDispatch clientDispatch ->
+                mb.Post (AddClient (guid,{Model=model; ServerDispatch=serverDispatch; ClientDispatch=clientDispatch}))
         let remove =
             fun () ->
                 mb.Post (DropClient guid)
@@ -89,175 +120,156 @@ type ServerHub<'model, 'server, 'client>() =
 
         {Add = add; Remove=remove; Update=update}
     /// Used to create a default `ServerHubInstance` that does nothing when the `ServerHub` is not set
-    static member Initialize(sh:ServerHub<'model, 'server, 'client> option)  =
+    static member Initialize(sh:ServerHub<'model, 'server,'client> option)  =
         match sh with
-        |None ->
+        | None ->
           {
-            Add = fun _ _ -> ()
+            Add = fun _ _ _ -> ()
             Remove = ignore
             Update = ignore}
-        |Some sh -> sh.Init()
+        | Some sh -> sh.Init()
+
+type ServerCreator<'model, 'server, 'client, 'impl> =
+    string ->
+     ((string -> Async<unit>) -> ServerHubInstance<'model,'server,'client> -> MailboxProcessor<Choice<'server,unit>>)
+     -> 'impl
 
 /// Defines server configuration
-type ServerProgram<'arg, 'model, 'server, 'client, 'impl> = {
-    init : 'arg -> 'model * Cmd<Msg<'server,'client>>
-    update : 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>
-    subscribe : 'model -> Cmd<Msg<'server,'client>>
-    serverHub : ServerHub<'model, 'server, 'client> option
-    whenDown : 'server option
-    server : ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl
-    endpoint : string
-}
+type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint:string,init,update) =
+    let mutable subscribe = fun _ -> Cmd.none
 
-module Server =
-    open Newtonsoft.Json
-    open Fable
+    let mutable logMsg = ignore
 
-    type SysMessage<'server,'client> =
-        | Dispose
-        | Msg of Msg<'server,'client>
-    let private c = JsonConverter()
-    let private write o = JsonConvert.SerializeObject(o,c)
-    let read<'a> str =
-        JsonConvert.DeserializeObject(str,typeof<'a>,c) :?> 'a
-    let createMailbox action hubInstance arg (program: ServerProgram<'arg,'model,'server,'client, 'impl>)  =
-        let model, msgs = program.init arg
-        let inbox = MailboxProcessor.Start(fun (mb:MailboxProcessor<SysMessage<'server, 'client>>) ->
-            let rec loop (state:'model) =
+    let mutable logInit = ignore
+    let mutable logModel = ignore
+    let  c = Fable.JsonConverter()
+    let s =
+        let js = Newtonsoft.Json.JsonSerializer()
+        js.Converters.Add c
+        js
+
+    let mutable mappings =
+        let t = typeof<'server>
+        Map.empty |> Map.add (t.FullName) (fun (o:Newtonsoft.Json.Linq.JToken) -> o.ToObject(t,s) :?> 'server)
+
+    let write (o:'client) = Newtonsoft.Json.JsonConvert.SerializeObject(o,c)
+    member val WhenDown : 'server option = None with get,set
+    member val ServerHub: ServerHub<'model,'server,'client> option = None with get,set
+    member this.WithWhenDown n =
+        this.WhenDown <- Some n
+        this
+    member this.WithServerHub sh =
+        this.ServerHub <- Some sh
+        this
+    /// Register the server mappings so inner messages can be transformed to the top-level `update` message
+    member this.Register<'Inner, 'server> (map:'Inner -> 'server) =
+        let t = typeof<'Inner>
+        mappings <- mappings |> Map.add t.FullName (fun (o:Newtonsoft.Json.Linq.JToken) -> o.ToObject(t,s) :?> 'Inner |> map)
+        this
+    member this.AddSubscription sub =
+        let sub model =
+            Cmd.batch [
+                subscribe model
+                sub model
+                ]
+        subscribe <- sub
+        this
+    /// Add a log function for the initial model
+    member this.AddInitLogging log =
+        let oldLogInit = logInit
+        logInit <- fun m ->
+            oldLogInit m
+            log m
+        this
+    /// Add a log function after the model updating
+    member this.AddModelLogging log =
+        let oldLogModel = logModel
+        logModel <- fun m ->
+            oldLogModel m
+            log m
+        this
+    /// Add a log function when receiving a new message
+    member this.AddMsgLogging log =
+        let oldLogMsg = logMsg
+        logMsg <- fun m ->
+            oldLogMsg m
+            log m
+        this
+    /// Trace all the updates to the console
+    member this.WithConsoleTracing =
+        this
+            .AddInitLogging(eprintfn "Initial state: %A")
+            .AddMsgLogging(eprintfn "New message: %A")
+            .AddModelLogging(eprintfn "Updated state: %A")
+
+
+    member __.Start server (arg:'arg) : 'impl =
+      let inbox action hubInstance = MailboxProcessor.Start(fun (mb:MailboxProcessor<Choice<'server,unit>>) ->
+        let clientDispatch (a:'client) =  a |> write |> action |> Async.Start
+        let model, msgs = init clientDispatch arg
+        logInit model
+        let sub =
+            try
+                hubInstance.Add model (Choice1Of2 >> mb.Post) clientDispatch
+                subscribe model
+            with _ ->
+                Cmd.none
+        sub @ msgs |> List.iter (fun sub -> sub (Choice1Of2 >> mb.Post))
+        let rec loop (state:'model) =
                 async {
                     let! msg = mb.Receive()
                     match msg with
-                    | Dispose ->
-                        return ()
-                    | Msg (S msg) ->
-                        let model, msgs = program.update msg state
-                        msgs |> List.iter (fun sub -> sub (Msg >> mb.Post))
+                    | Choice1Of2 msg ->
+                        logMsg msg
+                        let model, msgs = update clientDispatch msg state
+                        logModel model
+                        msgs |> List.iter (fun sub -> sub (Choice1Of2>>mb.Post))
                         hubInstance.Update model
                         return! loop model
-                    | Msg (C msg) ->
-                        do! write msg |> action
-                        return! loop state}
-            loop model)
-        let sub =
-            try
-                hubInstance.Add model (Msg >> inbox.Post)
-                program.subscribe model
-            with _ ->
-                Cmd.none
-        sub @ msgs |> List.iter (fun sub -> sub (Msg >> inbox.Post))
-        inbox
+                    | Choice2Of2 () ->
+                        return ()}
+        loop model)
+      server endpoint inbox
+
+    member __.Read str =
+        let (name:string,o:Newtonsoft.Json.Linq.JToken) = Newtonsoft.Json.JsonConvert.DeserializeObject(str,typeof<string*Newtonsoft.Json.Linq.JToken>,c) :?> _
+        mappings |> Map.tryFind name |> Option.map (fun e -> e o)
+
 [<RequireQualifiedAccess>]
 module Bridge =
-    /// Creates a `ServerProgram`
-    /// Takes a `server` : `ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl` with implementation
+    /// Creates a `ServerBridge`
+    /// Takes an `endpoint` where the server will listen for connections
     /// a `init` : `'arg -> 'model * Cmd<Msg<'server,'client>>`
     /// and a `update` : `'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`
     /// Typical program, new commands are produced by `init` and `update` along with the new state.
     let mkServer
-        (server: ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl)
-        (init : 'arg -> 'model * Cmd<Msg<'server,'client>>)
-        (update : 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>) =
-        {
-            init = init
-            update = update
-            subscribe = fun _ -> Cmd.none
-            serverHub = None
-            whenDown = None
-            server = server
-            endpoint = ""
-        }
+        endpoint
+        (init : Dispatch<'client> -> 'arg -> 'model * Cmd<'server>)
+        (update : Dispatch<'client> -> 'server -> 'model -> 'model * Cmd<'server>) =
+        BridgeServer(endpoint,init,update)
     /// Subscribe to external source of events.
     /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
-    let withSubscription subscribe (program: ServerProgram<_,_,_,_,_>) =
-        let sub model =
-            Cmd.batch [ program.subscribe model
-                        subscribe model ]
-        { program with subscribe = sub }
-    /// Defines the endpoint where the server will listen for connections
-    let at endpoint program =
-        { program with endpoint = endpoint }
+    let withSubscription subscribe (program: BridgeServer<_,_,_,_,_>) =
+        program.AddSubscription subscribe
 
-    /// Trace all the updates to the console
-    let withConsoleTrace (program: ServerProgram<_,_,_,_,_>) =
-        let traceInit arg =
-            let initModel,cmd = program.init arg
-            eprintfn "Initial state: %A" initModel
-            initModel,cmd
+    let withConsoleTrace (program: BridgeServer<_,_,_,_,_>) =
+        program.WithConsoleTracing
 
-        let traceUpdate msg model =
-            eprintfn "New message: %A" msg
-            let newModel,cmd = program.update msg model
-            eprintfn "Updated state: %A" newModel
-            newModel,cmd
 
-        { program with
-            init = traceInit
-            update = traceUpdate }
     /// Registers the `ServerHub` that will be used by this socket connections
-    let withServerHub hub program = {
-        program with serverHub = Some hub
-    }
+    let withServerHub hub (program: BridgeServer<_,_,_,_,_>) =
+        program.WithServerHub hub
 
     /// Server msg passed to the `updated` function when the connection is closed
-    let whenDown msg program =
-        { program with whenDown = Some msg}
+    let whenDown msg (program: BridgeServer<_,_,_,_,_>) =
+        program.WithWhenDown msg
 
     /// Creates a websocket loop.
     /// `arg`: argument to pass to the `init` function.
     /// `program`: program created with `mkProgram`.
-    let runWith arg program =
-        program.server program arg
+    let runWith server arg (program: BridgeServer<_,_,_,_,_>) =
+        program.Start (server program) arg
     /// Creates a websocket loop with `unit` for the `init` function.
     /// `program`: program created with `mkProgram`.
-    let run program =
-        program.server program ()
-
-    /// Creates a websocket loop at the specified endpoint.
-    /// `uri`: websocket endpoint
-    /// `arg`: argument to pass to the `init` function.
-    /// `program`: program created with `mkProgram`.
-    let runAtWith uri arg program =
-        let program = { program with endpoint = uri }
-        program.server program arg
-    /// Creates a websocket loop with `unit` for the `init` function at the specified endpoint.
-    /// `uri`: websocket endpoint
-    /// `program`: program created with `mkProgram`.
-    let runAt uri program =
-        let program = { program with endpoint = uri }
-        program.server program ()
-
-[<AutoOpen>]
-module CE =
-
-    type ServerBuilder<'arg, 'model, 'server, 'client, 'impl>(server: ServerProgram<'arg, 'model, 'server, 'client, 'impl> -> 'arg -> 'impl, init, update) =
-
-        member __.Yield(_) = Bridge.mkServer server init update
-        member __.Zero() = Bridge.mkServer server init update
-        [<CustomOperation("sub")>]
-        /// Takes a `'model -> Cmd<Msg<'server,'client>>` that can dispatch messages at any time
-        /// during the server connection
-        member __.Subscribe(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, subscribe) =
-            Bridge.withSubscription subscribe sp
-        [<CustomOperation("serverHub")>]
-        /// Takes a `ServerHub` that will be used to manage the connections to this server
-        member __.ServerHub(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, sh) =
-            Bridge.withServerHub sh sp
-        [<CustomOperation("whenDown")>]
-        /// Takes a server message that will be dispatched when the client disconnects
-        member __.WhenDown(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, whenDown) =
-            Bridge.whenDown whenDown sp
-        [<CustomOperation("consoleTrace")>]
-        /// Enables console tracing of the received messages and resulting models
-        member __.WithConsoleTrace(sp:ServerProgram<'arg,'model,'server,'client, 'impl>) =
-            Bridge.withConsoleTrace sp
-        [<CustomOperation("at")>]
-        /// Defines the endpoint where the server will listen for client connections
-        member __.RunAt(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, uri) =
-            Bridge.at uri sp
-        [<CustomOperation("runWith")>]
-        /// Defines the `init` argument when it is something other than `unit`
-        member __.RunWith(sp:ServerProgram<'arg,'model,'server,'client, 'impl>, arg) =
-            sp.server sp arg
-        member __.Run(impl:'impl) = impl
-        member __.Run(sp:ServerProgram<unit,'model,'server,'client, 'impl>) =
-             sp.server sp ()
+    let run server (program: BridgeServer<_,_,_,_,_>) =
+        program.Start (server program) ()

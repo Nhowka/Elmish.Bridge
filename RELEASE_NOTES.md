@@ -1,3 +1,6 @@
+#### 0.10.0-alpha
+* Less intrusive API
+
 #### 0.9.10
 * Support for '#'-s in the navigation address (by @cotyar)
 

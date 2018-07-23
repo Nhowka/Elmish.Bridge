@@ -11,18 +11,17 @@ module Giraffe =
     open System.Threading
     /// Giraffe's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
     /// Creates a `HttpHandler`
-    let server (program: ServerProgram<'arg,'model,'server,'client,HttpHandler>) arg : HttpHandler =
+    let server (program: BridgeServer<'arg,'model,'server,'client,HttpHandler>) : ServerCreator<'model, 'server, 'client, HttpHandler> =
+      fun endpoint inboxCreator ->
         let ws (next:HttpFunc) (ctx:HttpContext) =
           task {
             if ctx.WebSockets.IsWebSocketRequest then
-                let hi = ServerHub.Initialize program.serverHub
+                let hi = ServerHub.Initialize program.ServerHub
                 let! webSocket = ctx.WebSockets.AcceptWebSocketAsync()
-                let inbox =
-                    Server.createMailbox
-                        (fun s ->
+
+                let inbox = inboxCreator (fun s ->
                             let resp = s |> System.Text.Encoding.UTF8.GetBytes |> ArraySegment
-                            webSocket.SendAsync(resp,WebSocketMessageType.Text, true, CancellationToken.None) |> Async.AwaitTask)
-                        hi arg program
+                            webSocket.SendAsync(resp,WebSocketMessageType.Text, true, CancellationToken.None) |> Async.AwaitTask) hi
                 let skt =
                   task {
                     let buffer = Array.zeroCreate 4096
@@ -39,25 +38,20 @@ module Giraffe =
                             if complete then
                                 let data = frame |> List.rev |> Array.concat
                                 let str = System.Text.Encoding.UTF8.GetString data
-                                let msg : 'server = Server.read str
-                                (S msg) |> Server.Msg |> inbox.Post
+                                let msg = program.Read str
+                                msg |> Option.iter(Choice1Of2 >> inbox.Post)
                                 frame <- []
                         | _ -> ()
                   }
                 do! skt
-                program.whenDown |> Option.iter (S >> Server.Msg >> inbox.Post)
+                program.WhenDown |> Option.iter (Choice1Of2 >> inbox.Post)
                 hi.Remove ()
                 return Some ctx
             else
                 return None
             }
-        route program.endpoint >=> ws
+        route endpoint >=> ws
 
     /// Prepare app to use websockets
     let useWebSockets (app:IApplicationBuilder) =
         app.UseWebSockets()
-
-[<AutoOpen>]
-module CE =
-    /// Creates the Giraffe compatible server
-    let bridge init update = ServerBuilder(Giraffe.server,init,update)
