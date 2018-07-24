@@ -1,3 +1,6 @@
+#### 0.10.7
+* Even more tracing
+
 #### 0.10.6
 * More tracing
 

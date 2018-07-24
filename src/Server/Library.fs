@@ -183,6 +183,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     let mutable subscribe = fun _ -> Cmd.none
     let mutable logMsg = ignore
     let mutable logPMsg = ignore
+    let mutable logRegister = ignore
     let mutable logSMsg = ignore
     let mutable logInit = ignore
     let mutable logModel = ignore
@@ -217,6 +218,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     /// Register the server mappings so inner messages can be transformed to the top-level `update` message
     member this.Register<'Inner, 'server>(map : 'Inner -> 'server) =
         let t = typeof<'Inner>
+        logRegister t.FullName
         mappings <- mappings
                     |> Map.add t.FullName
                            (fun (o : Newtonsoft.Json.Linq.JToken) ->
@@ -236,6 +238,13 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
         let oldLogInit = logInit
         logInit <- fun m ->
             oldLogInit m
+            log m
+        this
+    /// Add a log function for logging type names on registering
+    member this.AddRegisterLogging log =
+        let oldLogRegister = logRegister
+        logRegister <- fun m ->
+            oldLogRegister m
             log m
         this
 
@@ -277,6 +286,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
             .AddMsgLogging(eprintfn "New message: %A")
             .AddSocketRawMsgLogging(eprintfn "Remote message: %s")
             .AddSocketParsedMsgLogging(eprintfn "Parsed remote message: %A")
+            .AddRegisterLogging(eprintfn "Type %s registered")
             .AddModelLogging(eprintfn "Updated state: %A")
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
