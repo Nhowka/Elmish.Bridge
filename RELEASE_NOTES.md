@@ -1,3 +1,21 @@
+#### 0.10.5
+* Public version of the new API
+
+#### 0.10.4-alpha
+* Use disconnection message with the same type as the top-level message
+
+#### 0.10.3-alpha
+* Support receiving inner messages so the server can work with a sub-set of the messages
+
+#### 0.10.2-alpha
+* Helper function to register server mappings
+
+#### 0.10.1-alpha
+* Be explicit about the separation on client and server messages on ServerHub
+
+#### 0.10.0-alpha
+* Less intrusive API
+
 #### 0.9.10
 * Support for '#'-s in the navigation address (by @cotyar)
 

@@ -9,8 +9,6 @@ Formely Elmish.Remoting. This library creates a bridge between server and client
 | Elmish.Bridge.Client  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Client.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Client) |
 | Elmish.Bridge.Suave  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Suave.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Suave)  |
 | Elmish.Bridge.Giraffe  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Giraffe.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Giraffe)  |
-| Elmish.Bridge.HMR  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.HMR.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.HMR)  |
-| Elmish.Bridge.Browser  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Browser.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Browser)  |
 
 ## Why?
 
@@ -42,25 +40,52 @@ module Shared =
     let endpoint = "/socket"
 ```
 
-The server and the client can return both kind of messages: `S ServerMsg` to define the server and `C ClientMsg` to the client kind. The `update` function now returns a `'model * Cmd<Msg<ServerMsg,ClientMsg>>`.
-
 ### Client
 
-What's different? Well, now you can send messages to and get messages from the server. The `update` function that was `'msg -> 'model -> 'model * Cmd<'msg>` now is a `'client -> 'model -> 'model * Cmd<Msg<'server,'client>>` and that is incompatible with the Elmish's `mkProgram`, so you can use the `bridge` function to get a computation expression to configure your client. You can pass functions taking the Elmish program with the `simple` operation if it results in the same message type or `mapped` otherwise, taking a mapping function before the program function.
+What's different? Well, now you can send messages to and get messages from the server. For it, just send the message using `Bridge.Send`. Simple as that. But before that, you need to enable the bridge on your Elmish `Program`, preferably before anything else so it can inject the incoming messages at the right place.
 
 ```fsharp
 open Elmish
 open Elmish.Bridge
 
-bridge init update view {
-  simple (Program.withReact "elmish-app")
-  at Shared.endpoint
-}
+Program.mkProgram init update view
+|> Program.withBridge Shared.endpoint
+|> Program.withReact "elmish-app"
+
 ```
 
 ### Server
 
-Now you can use the MVU approach on the server, minus the V. That still is just a client thing. There is one configured for Suave on the `Elmish.Bridge.Suave` package and another for Giraffe and Saturn on the `Elmish.Bridge.Giraffe` package. Create a new server using `bridge init update`.
+Now you can use the MVU approach on the server, minus the V. That still is just a client thing. For easy usage, the `init` and `update` function first argument is now a `Dispatch<ClientMsg>`. Just call that function with the client message and it will be sent there.
+
+The server has a little more configuration to do, but that enables the client to be very simple to use while being compatible with the vanilla Elmish. A problem that exists is that the client can send any kind of message, not just the expected message that the `update` listens to. Because of that, you need register every type that you want to be listening and how to get to the original top-level message.
+
+Imagine that you have the following model:
+
+```fsharp
+type FirstInnerMsg =
+  | FIA
+  | FIB
+type SecondInnerMsg =
+  | SIA
+  | SIB
+type OuterMsg = // That's the one the update expects
+  | SomeMsg
+  | First of FirstInnerMsg
+  | Second of SecondInnerMsg
+```
+
+`OuterMsg` is registered by default, but to enable the client to do `Bridge.Send FIA` or `Bridge.Send SIB` all you need to do is:
+
+```fsharp
+let server =
+  Bridge.mkServer Shared.endpoint init update
+  |> Bridge.register First // First is a function (FirstInnerMsg -> OuterMsg)
+  |> Bridge.register Second // Any ('a -> OuterMsg) will work
+  |> Bridge.run (* server implementation here*)
+```
+
+As for the server implementation, there is one for Suave on the `Elmish.Bridge.Suave` package and another for Giraffe/Saturn on the `Elmish.Bridge.Giraffe` package.
 
 - Suave
 
@@ -69,9 +94,8 @@ open Elmish
 open Elmish.Bridge
 
 let server =
-  bridge init update {
-    at Shared.endpoint
-  }
+  Bridge.mkServer Shared.endpoint init update
+  |> Bridge.run Suave.server
 
 let webPart =
   choose [
@@ -88,9 +112,8 @@ open Elmish
 open Elmish.Bridge
 
 let server =
-  bridge init update {
-    at Shared.endpoint
-  }
+  Bridge.mkServer Shared.endpoint init update
+  |> Bridge.run Giraffe.server
 
 let webApp =
   choose [
@@ -120,9 +143,8 @@ open Elmish
 open Elmish.Bridge
 
 let server =
-  bridge init update {
-    at Shared.endpoint
-  }
+  Bridge.mkServer Shared.endpoint init update
+  |> Bridge.run Suave.server
 
 let webApp =
   choose [
@@ -144,34 +166,38 @@ run app
 
 WebSockets are even better when you use that communication power to send messages between clients. No library would be complete without help to broadcast messages or send a message to an specific client. That's where the `ServerHub` comes in! It is a very simple class that worries about keeping the information about all the connected clients so you don't have to.
 
-Create a new `ServerHub` using:
+Create a new `ServerHub` and register all the mappings that you will use by using:
 
 ```fsharp
-let hub = ServerHub.New()
+let hub =
+  ServerHub()
+    .RegisterServer(First)
+    .RegisterServer(Second)
+    .RegisterClient(ClientMsg)
+
 ```
 
 then you can use it on your server:
 
 ```fsharp
-bridge init update {
-  serverHub hub
-  at Shared.endpoint
-}
+Bridge.mkServer Shared.endpoint init update
+|> Bridge.withServerHub hub
+|> Bridge.run server
 ```
 
 It has three functions:
-* `Broadcast`
+* `Broadcast(Server/Client)`
 
     Send a message to anyone connected:
     ```fsharp
-      hub.Broadcast (C (NewMessage "Hello, everyone!"))
+      hub.BroadcastClient (NewMessage "Hello, everyone!")
     ```
 
-* `SendIf`
+* `Send(Server/Client)If`
 
     Send a message to anyone whose model satisfies a predicate.
     ```fsharp
-      hub.SendIf (function {Gender = Female} -> true | _ -> false) (C (NewMessage "Hello, ladies!"))
+      hub.SendClientIf (function {Gender = Female} -> true | _ -> false) (NewMessage "Hello, ladies!")
     ```
 
 * `GetModels`
@@ -179,52 +205,49 @@ It has three functions:
     Gets a list with all models of all connected clients.
     ```fsharp
       let users = hub.GetModels() |> List.map (function {Name = n} -> n)
-      hub.Broadcast (C (ConnectedUsers users))
+      hub.BroadcastClient (ConnectedUsers users)
     ```
 
 These functions were enough when creating a simple chat, but let me know if you feel limited having only them!
 
-### HMR / Browser
 
-The HMR and Navigation module creates a new kind of message , but you can use `Elmish.Bridge.HMR` / `Elmish.Bridge.Broswer` helpers on the `mapped` operation to create a compatible `ClientProgram`:
+## Minimizing shared messages
+
+You can share just a sub-set of the messages between client and server. The message type used by the first argument of `init` and `update` functions on the server is what will be sent, so on the client you can add a mapping from that type for the type used on the client's `init`/`update`.
+
+Imagine you have the following model:
 
 ```fsharp
-open Elmish
-open Elmish.Bridge
-open Elmish.Bridge.Browser
-open Elmish.Browser.Navigation
-open Elmish.HMR
-open Elmish.Bridge.HMR
+type BridgeAware =
+  | Hello of string
 
-bridge init update view {
-  mapped Bridge.HMRMsgMapping Program.withHMR
-  mapped Bridge.NavigableMapping (Program.toNavigable Pages.urlParser urlUpdate)
-  simple (Program.withReact "elmish-app")
-  at Shared.endpoint
-}
+type SomeOtherMessage =
+  | InnerBridge of BridgeAware
+  | ...
+
+type TopLevel =
+  | SomeMsg of SomeOtherMessage
+  | ...
+
 ```
 
-## All operations
+You can make the server functions like this:
 
-A full description and explanation about the arguments can be found on the code and tooltip on the editor
+```fsharp
+let init (clientDispatch:Dispatch<BridgeAware>) () =
+  clientDispatch (Hello "I came from the server!")
+  someModel,someCmds
+```
 
-### Client
+And configure the client like this:
 
-- `simple` : Pass a function that takes an Elmish Program that don't change the message type
-- `mapped` : Pass a function that takes a message mapping and a function taking the Elmish Program that changes the message according to the mapping
-- `at` : Defines the endpoint where the connection will be made
-- `whenDown` : Defines a message that will be dispatched when the connection is lost
-- `sub` : Modified subscription that can send client and server messages. Takes `unit` instead of the model
-- `runWith` : Defines the argument when the `init` function don't take `unit` as an argument
+```fsharp
+Program.mkProgram init update view
+|> Program.withBridgeWithMapping Shared.endpoint (InnerBridge>>SomeMsg)
+|> Program.withReact "elmish-app"
+```
 
-### Server
-
-- `serverHub` : Defines the `ServerHub` used by the connection
-- `sub` : Defines a subscription
-- `whenDown` : Defines a message to be dispatched when the client disconnects
-- `consoleTrace` : Log the messages and new models to the console
-- `at` : Defines the endpoint where the server will listen to connections
-- `runWith` : Defines the argument when the `init` function don't take `unit` as an argument
+That way, only the `BridgeAware` type needs to be on the Shared file
 
 ## Anything more?
 
