@@ -1,3 +1,6 @@
+#### 0.10.1-alpha
+* Be explicit about the separation on client and server messages on ServerHub
+
 #### 0.10.0-alpha
 * Less intrusive API
 
