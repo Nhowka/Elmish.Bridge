@@ -100,9 +100,6 @@ type ServerHub<'model, 'server, 'client>() =
                 }
             hub Map.empty)
 
-    /// Creates a new `ServerHub`
-    static member New() : ServerHub<'a, 'b, 'c> = ServerHub()
-
     /// Register the client mappings so inner messages can be transformed to the top-level `update` message
     member this.RegisterClient<'Inner, 'client>(map : 'Inner -> 'client) =
         clientMappings <- clientMappings
@@ -306,8 +303,8 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
 module Bridge =
     /// Creates a `ServerBridge`
     /// Takes an `endpoint` where the server will listen for connections
-    /// a `init` : `'arg -> 'model * Cmd<Msg<'server,'client>>`
-    /// and a `update` : `'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`
+    /// a `init` : `Dispatch<'client> -> 'arg -> 'model * Cmd<Msg<'server,'client>>`
+    /// and a `update` : `Dispatch<'client> -> 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`
     /// Typical program, new commands are produced by `init` and `update` along with the new state.
     let mkServer endpoint
         (init : Dispatch<'client> -> 'arg -> ('model * Cmd<'server>))
@@ -322,6 +319,10 @@ module Bridge =
     /// Log changes on the model and received messages to the console
     let withConsoleTrace (program : BridgeServer<_, _, _, _, _>) =
         program.WithConsoleTracing
+
+    /// Register the server mappings so inner messages can be transformed to the top-level `update` message
+    let register map (program : BridgeServer<_, _, _, _, _>) =
+        program.Register map
 
     /// Registers the `ServerHub` that will be used by this socket connections
     let withServerHub hub (program : BridgeServer<_, _, _, _, _>) =

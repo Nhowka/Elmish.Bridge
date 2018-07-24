@@ -15,12 +15,13 @@ module internal Constants =
 
 /// Creates the bridge. Takes the endpoint and an optional message to be dispatched when the connection is closed.
 /// It exposes a method `Send` that can be used to send messages to the server
-type BridgeConfig<'Msg> =
+type BridgeConfig<'Msg,'ElmishMsg> =
     { endpoint : string
-      whenDown : 'Msg option }
+      whenDown : 'Msg option
+      mapping :  'Msg -> 'ElmishMsg}
 
     [<PassGenerics>]
-    member private this.Websocket<'Msg> whenDown server =
+    member private this.Websocket whenDown server =
         let socket = Fable.Import.Browser.WebSocket.Create server
         Browser.window?(Constants.socketIdentifier) <- Some socket
         socket.onclose <- fun _ ->
@@ -33,7 +34,7 @@ type BridgeConfig<'Msg> =
             |> this.RaiseEvent
 
     [<PassGenerics>]
-    member internal this.Attach(program : Elmish.Program<_, _, 'Msg, _>) =
+    member internal this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>) =
         let url =
             Fable.Import.Browser.URL.Create
                 (Fable.Import.Browser.window.location.href)
@@ -45,6 +46,7 @@ type BridgeConfig<'Msg> =
             (fun dispatch ->
             Browser.window?(Constants.dispatchIdentifier) <- Some
                                                                (JsInterop.ofJson<'Msg>
+                                                                >> this.mapping
                                                                 >> dispatch))
             :: program.subscribe model
         { program with subscribe = subs }
@@ -66,14 +68,35 @@ module Bridge =
 
 [<RequireQualifiedAccess>]
 module Program =
-    /// Apply the `Bridge` to be used with the program.
+    /// Apply the `Bridge` to be used with the program with a message to be sent when connection is lost.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     [<PassGenerics>]
     let withBridgeWhenDown endpoint whenDown (program : Program<_, _, 'Msg, _>) =
         { endpoint = endpoint
-          whenDown = Some whenDown }.Attach program
+          whenDown = Some whenDown
+          mapping = id }.Attach program
 
+    /// Apply the `Bridge` to be used with the program with a mapping to receive inner messages.
+    /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
+    [<PassGenerics>]
+    let withBridgeWithMapping endpoint (mapping:'Msg -> 'ElmishMsg) (program : Program<_, _, 'ElmishMsg, _>) =
+        { endpoint = endpoint
+          whenDown = None
+          mapping = mapping }.Attach program
+
+    /// Apply the `Bridge` to be used with the program with a mapping to receive inner messages
+    /// and a message to be sent when connection is lost.
+    /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
+    [<PassGenerics>]
+    let withBridgeWithMappingAndWhenDown endpoint mapping (whenDown:'Msg) (program : Program<_, _, 'ElmishMsg, _>) =
+        { endpoint = endpoint
+          whenDown = Some whenDown
+          mapping = mapping }.Attach program
+
+    /// Apply the `Bridge` to be used with the program.
+    /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     [<PassGenerics>]
     let withBridge endpoint (program : Program<_, _, 'Msg, _>) =
         { endpoint = endpoint
-          whenDown = None }.Attach program
+          whenDown = None
+          mapping = id}.Attach program

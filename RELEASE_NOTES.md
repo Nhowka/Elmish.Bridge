@@ -1,3 +1,9 @@
+#### 0.10.3-alpha
+* Support receiving inner messages so the server can work with a sub-set of the messages
+
+#### 0.10.2-alpha
+* Helper function to register server mappings
+
 #### 0.10.1-alpha
 * Be explicit about the separation on client and server messages on ServerHub
 
