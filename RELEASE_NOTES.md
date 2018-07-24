@@ -1,3 +1,6 @@
+#### 0.10.6
+* More tracing
+
 #### 0.10.5
 * Public version of the new API
 

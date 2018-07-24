@@ -182,6 +182,8 @@ type ServerCreator<'model, 'server, 'client, 'impl> = string -> ((string -> Asyn
 type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init, update) =
     let mutable subscribe = fun _ -> Cmd.none
     let mutable logMsg = ignore
+    let mutable logPMsg = ignore
+    let mutable logSMsg = ignore
     let mutable logInit = ignore
     let mutable logModel = ignore
     static let c = Fable.JsonConverter()
@@ -253,10 +255,28 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
             log m
         this
 
-    /// Trace all the updates to the console
+    /// Add a log function when receiving a raw socket message
+    member this.AddSocketRawMsgLogging log =
+        let oldLogSMsg = logSMsg
+        logSMsg <- fun m ->
+            oldLogSMsg m
+            log m
+        this
+
+    /// Add a log function after parsing the raw socket message
+    member this.AddSocketParsedMsgLogging log =
+        let oldLogPMsg = logPMsg
+        logPMsg <- fun m ->
+            oldLogPMsg m
+            log m
+        this
+
+    /// Trace all the operation to the console
     member this.WithConsoleTracing =
         this.AddInitLogging(eprintfn "Initial state: %A")
             .AddMsgLogging(eprintfn "New message: %A")
+            .AddSocketRawMsgLogging(eprintfn "Remote message: %s")
+            .AddSocketParsedMsgLogging(eprintfn "Parsed remote message: %A")
             .AddModelLogging(eprintfn "Updated state: %A")
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
@@ -298,12 +318,16 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
     member __.Read str =
+        logSMsg str
         let (name : string, o : Newtonsoft.Json.Linq.JToken) =
             Newtonsoft.Json.JsonConvert.DeserializeObject
                 (str, typeof<string * Newtonsoft.Json.Linq.JToken>, c) :?> _
-        mappings
-        |> Map.tryFind name
-        |> Option.map (fun e -> e o)
+        let parsed =
+            mappings
+            |> Map.tryFind name
+            |> Option.map (fun e -> e o)
+        parsed |> Option.iter logPMsg
+        parsed
 
 [<RequireQualifiedAccess>]
 module Bridge =
