@@ -1,3 +1,6 @@
+#### 0.10.5
+* Public version of the new API
+
 #### 0.10.4-alpha
 * Use disconnection message with the same type as the top-level message
 

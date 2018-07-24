@@ -170,6 +170,7 @@ type ServerHub<'model, 'server, 'client>() =
           Update = update }
 
     /// Used to create a default `ServerHubInstance` that does nothing when the `ServerHub` is not set
+    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
     static member Initialize(sh : ServerHub<'model, 'server, 'client> option) =
         sh
         |> Option.map (fun sh -> sh.Init())
@@ -198,7 +199,9 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
                o.ToObject(t, s) :?> 'server)
 
     let write (o : 'client) = Newtonsoft.Json.JsonConvert.SerializeObject(o, c)
+    /// Server msg passed to the `update` function when the connection is closed
     member val WhenDown : 'server option = None with get, set
+    /// Registers the `ServerHub` that will be used by this socket connections
     member val ServerHub : ServerHub<'model, 'server, 'client> option = None with get, set
 
     member this.WithWhenDown n =
@@ -217,7 +220,8 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
                            (fun (o : Newtonsoft.Json.Linq.JToken) ->
                            o.ToObject(t, s) :?> 'Inner |> map)
         this
-
+    /// Subscribe to external source of events.
+    /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
     member this.WithSubscription sub =
         let sub model =
             Cmd.batch [ subscribe model
@@ -254,7 +258,8 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
         this.AddInitLogging(eprintfn "Initial state: %A")
             .AddMsgLogging(eprintfn "New message: %A")
             .AddModelLogging(eprintfn "Updated state: %A")
-
+    /// Internal use only
+    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
     member __.Start server (arg : 'arg) : 'impl =
         let inbox action hubInstance =
             MailboxProcessor.Start(fun (mb : MailboxProcessor<Choice<'server, unit>>) ->
@@ -290,7 +295,8 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
                     }
                 loop model)
         server endpoint inbox
-
+    /// Internal use only
+    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
     member __.Read str =
         let (name : string, o : Newtonsoft.Json.Linq.JToken) =
             Newtonsoft.Json.JsonConvert.DeserializeObject
@@ -303,8 +309,8 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
 module Bridge =
     /// Creates a `ServerBridge`
     /// Takes an `endpoint` where the server will listen for connections
-    /// a `init` : `Dispatch<'client> -> 'arg -> 'model * Cmd<Msg<'server,'client>>`
-    /// and a `update` : `Dispatch<'client> -> 'server -> 'model -> 'model * Cmd<Msg<'server,'client>>`
+    /// a `init` : `Dispatch<'client> -> 'arg -> 'model * Cmd<'server>`
+    /// and a `update` : `Dispatch<'client> -> 'server -> 'model -> 'model * Cmd<'server>`
     /// Typical program, new commands are produced by `init` and `update` along with the new state.
     let mkServer endpoint
         (init : Dispatch<'client> -> 'arg -> ('model * Cmd<'server>))
@@ -328,7 +334,7 @@ module Bridge =
     let withServerHub hub (program : BridgeServer<_, _, _, _, _>) =
         program.WithServerHub hub
 
-    /// Server msg passed to the `updated` function when the connection is closed
+    /// Server msg passed to the `update` function when the connection is closed
     let whenDown msg (program : BridgeServer<_, _, _, _, _>) =
         program.WithWhenDown msg
 
