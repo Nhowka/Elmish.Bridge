@@ -1,3 +1,6 @@
+#### 0.10.9
+* Account for nested classes when registering the top-level update type
+
 #### 0.10.8
 * Account for nested classes and differences in naming on reflection
 

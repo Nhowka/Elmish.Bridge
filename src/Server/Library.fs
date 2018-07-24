@@ -197,7 +197,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     let mutable mappings =
         let t = typeof<'server>
         Map.empty
-        |> Map.add (t.FullName)
+        |> Map.add (t.FullName.Replace('+','.'))
                (fun (o : Newtonsoft.Json.Linq.JToken) ->
                o.ToObject(t, s) :?> 'server)
 
