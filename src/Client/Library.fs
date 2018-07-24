@@ -69,7 +69,7 @@ module Bridge =
         !!Browser.window?(Constants.socketIdentifier)
         |> Option.iter
                (fun (s : Fable.Import.Browser.WebSocket) ->
-               s.send (JsInterop.toJson (typeof<'Server>.FullName, server)))
+               s.send (JsInterop.toJson (typeof<'Server>.FullName.Replace('+','.'), server)))
 
 [<RequireQualifiedAccess>]
 module Program =

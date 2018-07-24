@@ -1,3 +1,6 @@
+#### 0.10.8
+* Account for nested classes and differences in naming on reflection
+
 #### 0.10.7
 * Even more tracing
 

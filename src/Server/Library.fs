@@ -218,9 +218,10 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     /// Register the server mappings so inner messages can be transformed to the top-level `update` message
     member this.Register<'Inner, 'server>(map : 'Inner -> 'server) =
         let t = typeof<'Inner>
-        logRegister t.FullName
+        let name = t.FullName.Replace('+','.')
+        logRegister name
         mappings <- mappings
-                    |> Map.add t.FullName
+                    |> Map.add name
                            (fun (o : Newtonsoft.Json.Linq.JToken) ->
                            o.ToObject(t, s) :?> 'Inner |> map)
         this
