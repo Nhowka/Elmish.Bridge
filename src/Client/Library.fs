@@ -9,6 +9,8 @@ open Fable.Core.JsInterop
 module internal Constants =
     [<Literal>]
     let internal dispatchIdentifier = "elmish_bridge_message_dispatch"
+    [<Literal>]
+    let internal pureDispatchIdentifier = "elmish_original_message_dispatch"
 
     [<Literal>]
     let internal socketIdentifier = "elmish_bridge_socket"
@@ -17,7 +19,7 @@ module internal Constants =
 /// It exposes a method `Send` that can be used to send messages to the server
 type BridgeConfig<'Msg,'ElmishMsg> =
     { endpoint : string
-      whenDown : 'Msg option
+      whenDown : 'ElmishMsg option
       mapping :  'Msg -> 'ElmishMsg}
 
     [<PassGenerics>]
@@ -25,13 +27,18 @@ type BridgeConfig<'Msg,'ElmishMsg> =
         let socket = Fable.Import.Browser.WebSocket.Create server
         Browser.window?(Constants.socketIdentifier) <- Some socket
         socket.onclose <- fun _ ->
-            whenDown |> Option.iter (this.RaiseEvent)
+            whenDown |> Option.iter (fun msg ->
+            !!Browser.window?(Constants.pureDispatchIdentifier)
+            |> Option.iter (fun dispatch -> dispatch msg))
             Fable.Import.Browser.window.setTimeout
                 (this.Websocket whenDown server, 1000) |> ignore
         socket.onmessage <- fun e ->
-            e.data
-            |> string
-            |> this.RaiseEvent
+            !!Browser.window?(Constants.dispatchIdentifier)
+            |> Option.iter (fun dispatch ->
+                 e.data
+                 |> string
+                 |> dispatch)
+
 
     [<PassGenerics>]
     member internal this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>) =
@@ -47,14 +54,12 @@ type BridgeConfig<'Msg,'ElmishMsg> =
             Browser.window?(Constants.dispatchIdentifier) <- Some
                                                                (JsInterop.ofJson<'Msg>
                                                                 >> this.mapping
+                                                                >> dispatch)
+            Browser.window?(Constants.pureDispatchIdentifier) <- Some
+                                                               (JsInterop.ofJson<'ElmishMsg>
                                                                 >> dispatch))
             :: program.subscribe model
         { program with subscribe = subs }
-
-    [<PassGenerics>]
-    member private __.RaiseEvent(msg : string) =
-        !!Browser.window?(Constants.dispatchIdentifier)
-        |> Option.iter (fun dispatch -> dispatch msg)
 
 [<RequireQualifiedAccess>]
 module Bridge =
@@ -88,7 +93,7 @@ module Program =
     /// and a message to be sent when connection is lost.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     [<PassGenerics>]
-    let withBridgeWithMappingAndWhenDown endpoint mapping (whenDown:'Msg) (program : Program<_, _, 'ElmishMsg, _>) =
+    let withBridgeWithMappingAndWhenDown endpoint mapping (whenDown:'ElmishMsg) (program : Program<_, _, 'ElmishMsg, _>) =
         { endpoint = endpoint
           whenDown = Some whenDown
           mapping = mapping }.Attach program

@@ -1,3 +1,6 @@
+#### 0.10.4-alpha
+* Use disconnection message with the same type as the top-level message
+
 #### 0.10.3-alpha
 * Support receiving inner messages so the server can work with a sub-set of the messages
 
