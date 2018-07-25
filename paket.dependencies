@@ -10,7 +10,7 @@ group Server
   source https://api.nuget.org/v3/index.json
 
   nuget Fable.JsonConverter
-  nuget Fable.Elmish
+  nuget Elmish
 
 group Suave
   storage: none
@@ -24,18 +24,6 @@ group Giraffe
 
   nuget Giraffe
   nuget Microsoft.AspNetCore.WebSockets
-
-group HMR
-  storage: none
-  source https://api.nuget.org/v3/index.json
-
-  nuget Fable.Elmish.HMR
-
-group Browser
-  storage: none
-  source https://api.nuget.org/v3/index.json
-
-  nuget Fable.Elmish.Browser
 
 group Build
   source https://api.nuget.org/v3/index.json

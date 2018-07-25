@@ -210,6 +210,17 @@ It has three functions:
 
 These functions were enough when creating a simple chat, but let me know if you feel limited having only them!
 
+## Other configuration
+
+Besides `Program.withBridge`, there is `Program.withBridgeConfig` that can configure some aspects:
+
+- As the endpoint is mandatory, create the `BridgeConfig` using `Bridge.endpoint`
+
+- For defining a time in seconds to reconnect, chain the config with `Bridge.withRetryTime`
+
+- For defining a message to be sent to the client when the connection is lost, chain the config with `Bridge.withWhenDown`
+
+- For defining a mapping so the server can send a different message to the client, chain the config with `Bridge.withMapping`. More on that on the next section.
 
 ## Minimizing shared messages
 
@@ -243,11 +254,13 @@ And configure the client like this:
 
 ```fsharp
 Program.mkProgram init update view
-|> Program.withBridgeWithMapping Shared.endpoint (InnerBridge>>SomeMsg)
+|> Program.withBridgeConfig(
+    Bridge.endpoint Shared.endpoint
+    |> Bridge.withMapping  (InnerBridge>>SomeMsg))
 |> Program.withReact "elmish-app"
 ```
 
-That way, only the `BridgeAware` type needs to be on the Shared file
+That way, only the `BridgeAware` type needs to be on the shared file
 
 ## Anything more?
 

@@ -182,7 +182,6 @@ type ServerCreator<'model, 'server, 'client, 'impl> = string -> ((string -> Asyn
 type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init, update) =
     let mutable subscribe = fun _ -> Cmd.none
     let mutable logMsg = ignore
-    let mutable logPMsg = ignore
     let mutable logRegister = ignore
     let mutable logSMsg = ignore
     let mutable logInit = ignore
@@ -269,20 +268,11 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
             log m
         this
 
-    /// Add a log function after parsing the raw socket message
-    member this.AddSocketParsedMsgLogging log =
-        let oldLogPMsg = logPMsg
-        logPMsg <- fun m ->
-            oldLogPMsg m
-            log m
-        this
-
     /// Trace all the operation to the console
     member this.WithConsoleTracing =
         this.AddInitLogging(eprintfn "Initial state: %A")
             .AddMsgLogging(eprintfn "New message: %A")
             .AddSocketRawMsgLogging(eprintfn "Remote message: %s")
-            .AddSocketParsedMsgLogging(eprintfn "Parsed remote message: %A")
             .AddRegisterLogging(eprintfn "Type %s registered")
             .AddModelLogging(eprintfn "Updated state: %A")
     /// Internal use only
@@ -330,12 +320,9 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
         let (name : string, o : Newtonsoft.Json.Linq.JToken) =
             Newtonsoft.Json.JsonConvert.DeserializeObject
                 (str, typeof<string * Newtonsoft.Json.Linq.JToken>, c) :?> _
-        let parsed =
-            mappings
-            |> Map.tryFind name
-            |> Option.map (fun e -> e o)
-        parsed |> Option.iter logPMsg
-        parsed
+        mappings
+        |> Map.tryFind name
+        |> Option.map (fun e -> e o)
 
 [<RequireQualifiedAccess>]
 module Bridge =

@@ -1,3 +1,8 @@
+#### 1.0.0-rc
+* Support a custom retry time
+* Support a common configuration record
+* Use the Elmish package instead of Fable.Elmish on the server
+
 #### 0.10.10
 * Register main type when running so it can be logged
 
