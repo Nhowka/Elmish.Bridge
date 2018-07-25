@@ -1,3 +1,6 @@
+#### 0.10.10
+* Register main type when running so it can be logged
+
 #### 0.10.9
 * Account for nested classes when registering the top-level update type
 

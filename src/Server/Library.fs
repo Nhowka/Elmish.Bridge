@@ -194,12 +194,8 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
         js.Converters.Add c
         js
 
-    let mutable mappings =
-        let t = typeof<'server>
-        Map.empty
-        |> Map.add (t.FullName.Replace('+','.'))
-               (fun (o : Newtonsoft.Json.Linq.JToken) ->
-               o.ToObject(t, s) :?> 'server)
+    let mutable mappings = Map.empty
+
 
     let write (o : 'client) = Newtonsoft.Json.JsonConvert.SerializeObject(o, c)
     /// Server msg passed to the `update` function when the connection is closed
@@ -291,7 +287,8 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
             .AddModelLogging(eprintfn "Updated state: %A")
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-    member __.Start server (arg : 'arg) : 'impl =
+    member this.Start server (arg : 'arg) : 'impl =
+        this.Register(id) |> ignore
         let inbox action hubInstance =
             MailboxProcessor.Start(fun (mb : MailboxProcessor<Choice<'server, unit>>) ->
                 let clientDispatch (a : 'client) =
