@@ -268,7 +268,7 @@ When using the development mode of Webpack, usually a proxy is defined so the se
 
 Example:
 
-```json
+```
 devServer: {
     proxy: {
       '/api/*': {
