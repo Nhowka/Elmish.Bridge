@@ -262,6 +262,30 @@ Program.mkProgram init update view
 
 That way, only the `BridgeAware` type needs to be on the shared file
 
+## Webpack caveat
+
+When using the development mode of Webpack, usually a proxy is defined so the server calls can be redirected to the right place. That proxy doesn't work for websockets by default. To enable them, use `ws: true` when configuring the endpoint.
+
+Example:
+
+```json
+devServer: {
+    proxy: {
+      '/api/*': {
+        target: 'http://localhost:' + port,
+        changeOrigin: true
+      },
+      '/socket': {
+        target: 'http://localhost:' + port,
+        ws: true
+     }
+    },
+    contentBase: "./public",
+    hot: true,
+    inline: true
+  }
+```
+
 ## Anything more?
 
 This documentation is on an early stage, if you have any questions feel free to open an issue or PR so we can have it in a good shape. You can check a test project [here](https://github.com/Nhowka/TestRemoting). I hope you enjoy using it!
