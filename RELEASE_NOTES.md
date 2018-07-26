@@ -1,4 +1,4 @@
-#### 1.0.0-rc
+#### 1.0.0
 * Support a custom retry time
 * Support a common configuration record
 * Use the Elmish package instead of Fable.Elmish on the server
