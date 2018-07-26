@@ -11,18 +11,16 @@ module Suave =
 
     /// Suave's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
     /// Creates a `WebPart`
-    let server (program : BridgeServer<'arg, 'model, 'server, 'client, WebPart>) : ServerCreator<'model, 'server, 'client, WebPart> =
+    let server (program : BridgeServer<'arg, 'model, 'server, 'client, WebPart>) : ServerCreator<'server, WebPart> =
         fun endpoint inboxCreator ->
             let ws (webSocket : WebSocket) _ =
-                let hi = ServerHub.Initialize program.ServerHub
-
                 let inbox =
                     inboxCreator (fun (s : string) ->
                         let resp =
                             s
                             |> System.Text.Encoding.UTF8.GetBytes
                             |> ByteSegment
-                        webSocket.send Text resp true |> Async.Ignore) hi
+                        webSocket.send Text resp true |> Async.Ignore)
 
                 let skt =
                     socket {
@@ -54,7 +52,7 @@ module Suave =
                 async {
                     let! result = skt
                     program.WhenDown |> Option.iter (Choice1Of2 >> inbox.Post)
-                    hi.Remove()
+                    inbox.Post (Choice2Of2())
                     return result
                 }
             path endpoint >=> handShake ws

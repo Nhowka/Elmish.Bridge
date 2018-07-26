@@ -1,3 +1,6 @@
+#### 1.0.1
+* Solves a potential leak
+
 #### 1.0.0
 * Support a custom retry time
 * Support a common configuration record

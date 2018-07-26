@@ -176,7 +176,7 @@ type ServerHub<'model, 'server, 'client>() =
         |> Option.map (fun sh -> sh.Init())
         |> Option.defaultValue ServerHubInstance.Empty
 
-type ServerCreator<'model, 'server, 'client, 'impl> = string -> ((string -> Async<unit>) -> ServerHubInstance<'model, 'server, 'client> -> MailboxProcessor<Choice<'server, unit>>) -> 'impl
+type ServerCreator<'server, 'impl> = string -> ((string -> Async<unit>) -> MailboxProcessor<Choice<'server, unit>>) -> 'impl
 
 /// Defines server configuration
 type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init, update) =
@@ -279,14 +279,14 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
     member this.Start server (arg : 'arg) : 'impl =
         this.Register(id) |> ignore
-        let inbox action hubInstance =
+        let inbox action =
             MailboxProcessor.Start(fun (mb : MailboxProcessor<Choice<'server, unit>>) ->
                 let clientDispatch (a : 'client) =
                     a
                     |> write
                     |> action
                     |> Async.Start
-
+                let hubInstance = ServerHub.Initialize this.ServerHub
                 let model, msgs = init clientDispatch arg
                 logInit model
                 let sub =
@@ -309,7 +309,9 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
                                    (fun sub -> sub (Choice1Of2 >> mb.Post))
                             hubInstance.Update model
                             return! loop model
-                        | Choice2Of2() -> return ()
+                        | Choice2Of2() ->
+                            hubInstance.Remove()
+                            return ()
                     }
                 loop model)
         server endpoint inbox

@@ -12,16 +12,15 @@ module Giraffe =
 
     /// Giraffe's server used by `ServerProgram.runServerAtWith` and `ServerProgram.runServerAt`
     /// Creates a `HttpHandler`
-    let server (program : BridgeServer<'arg, 'model, 'server, 'client, HttpHandler>) : ServerCreator<'model, 'server, 'client, HttpHandler> =
+    let server (program : BridgeServer<'arg, 'model, 'server, 'client, HttpHandler>) : ServerCreator<'server, HttpHandler> =
         fun endpoint inboxCreator ->
             let ws (next : HttpFunc) (ctx : HttpContext) =
                 task {
                     if ctx.WebSockets.IsWebSocketRequest then
-                        let hi = ServerHub.Initialize program.ServerHub
                         let! webSocket = ctx.WebSockets.AcceptWebSocketAsync()
                         let inbox =
                             inboxCreator
-                                (fun s ->
+                                (fun (s:string) ->
                                 let resp =
                                     s
                                     |> System.Text.Encoding.UTF8.GetBytes
@@ -29,8 +28,6 @@ module Giraffe =
                                 webSocket.SendAsync
                                     (resp, WebSocketMessageType.Text, true,
                                      CancellationToken.None) |> Async.AwaitTask)
-                                hi
-
                         let skt =
                             task {
                                 let buffer = Array.zeroCreate 4096
@@ -71,7 +68,7 @@ module Giraffe =
                         do! skt
                         program.WhenDown
                         |> Option.iter (Choice1Of2 >> inbox.Post)
-                        hi.Remove()
+                        inbox.Post (Choice2Of2 ())
                         return Some ctx
                     else return None
                 }
