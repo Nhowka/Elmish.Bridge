@@ -1,4 +1,4 @@
-#### 1.1.0-rc2
+#### 1.1.0
 * Makes ServerHub mockable (by @Zaid-Ajaj)
 * Enable multiple bridge connections with named bridges
 
