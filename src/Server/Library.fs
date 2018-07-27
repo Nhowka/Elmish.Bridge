@@ -27,6 +27,15 @@ type internal ServerHubMessages<'model, 'server, 'client> =
     | UpdateModel of System.Guid * 'model
     | DropClient of System.Guid
 
+/// An interface that represents what a ServerHub is able to do
+type IServerHub<'model, 'server, 'client> = 
+    abstract BroadcastClient<'inner> : 'inner -> unit 
+    abstract BroadcastServer<'inner> : 'inner -> unit 
+    abstract SendClientIf<'inner> : ('model -> bool) -> 'inner -> unit 
+    abstract SendServerIf<'inner> : ('model -> bool) -> 'inner -> unit 
+    abstract GetModels : unit -> 'model list 
+
+
 /// Holds the data of all connected clients
 type ServerHub<'model, 'server, 'client>() =
     let mutable clientMappings =
@@ -99,59 +108,63 @@ type ServerHub<'model, 'server, 'client>() =
                     return! hub data
                 }
             hub Map.empty)
-
+    
     /// Register the client mappings so inner messages can be transformed to the top-level `update` message
-    member this.RegisterClient<'Inner, 'client>(map : 'Inner -> 'client) =
+    member this.RegisterClient<'Inner>(map : 'Inner -> 'client) =
         clientMappings <- clientMappings
                           |> Map.add typeof<'Inner>.FullName
                                  (fun (o : obj) -> o :?> 'Inner |> map)
-        this
+        
+        this 
+
 
     /// Register the server mappings so inner messages can be transformed to the top-level `update` message
-    member this.RegisterServer<'Inner, 'server>(map : 'Inner -> 'server) =
+    member this.RegisterServer<'Inner>(map : 'Inner -> 'server) =
         serverMappings <- serverMappings
                           |> Map.add typeof<'Inner>.FullName
                                  (fun (o : obj) -> o :?> 'Inner |> map)
-        this
+        
+        this 
 
-    /// Send client message for all connected users
-    member __.BroadcastClient<'inner>(msg : 'inner) =
-        clientMappings
-        |> Map.tryFind typeof<'inner>.FullName
-        |> Option.iter (fun f ->
-               f msg
-               |> ClientBroadcast
-               |> mb.Post)
+    interface IServerHub<'model, 'server, 'client> with 
+        /// Send client message for all connected users
+        member __.BroadcastClient<'inner>(msg : 'inner) =
+            clientMappings
+            |> Map.tryFind typeof<'inner>.FullName
+            |> Option.iter (fun f ->
+                   f msg
+                   |> ClientBroadcast
+                   |> mb.Post)
 
-    /// Send server message for all connected users
-    member __.BroadcastServer<'inner>(msg : 'inner) =
-        serverMappings
-        |> Map.tryFind typeof<'inner>.FullName
-        |> Option.iter (fun f ->
-               f msg
-               |> ServerBroadcast
-               |> mb.Post)
+        /// Send server message for all connected users
+        member __.BroadcastServer<'inner>(msg : 'inner) =
+            serverMappings
+            |> Map.tryFind typeof<'inner>.FullName
+            |> Option.iter (fun f ->
+                   f msg
+                   |> ServerBroadcast
+                   |> mb.Post)
 
-    /// Send client message for all connected users if their `model` passes the predicate
-    member __.SendClientIf predicate (msg : 'inner) =
-        clientMappings
-        |> Map.tryFind typeof<'inner>.FullName
-        |> Option.iter (fun f ->
-               (predicate, f msg)
-               |> ClientSendIf
-               |> mb.Post)
+        /// Send client message for all connected users if their `model` passes the predicate
+        member __.SendClientIf predicate (msg : 'inner) =
+            clientMappings
+            |> Map.tryFind typeof<'inner>.FullName
+            |> Option.iter (fun f ->
+                   (predicate, f msg)
+                   |> ClientSendIf
+                   |> mb.Post)
 
-    /// Send server message for all connected users if their `model` passes the predicate
-    member __.SendServerIf predicate (msg : 'inner) =
-        serverMappings
-        |> Map.tryFind typeof<'inner>.FullName
-        |> Option.iter (fun f ->
-               (predicate, f msg)
-               |> ServerSendIf
-               |> mb.Post)
+        /// Send server message for all connected users if their `model` passes the predicate
+        member __.SendServerIf predicate (msg : 'inner) =
+            serverMappings
+            |> Map.tryFind typeof<'inner>.FullName
+            |> Option.iter (fun f ->
+                   (predicate, f msg)
+                   |> ServerSendIf
+                   |> mb.Post)
 
-    /// Return the model of all connected users
-    member __.GetModels() = mb.PostAndReply GetModels
+        /// Return the model of all connected users
+        member __.GetModels() = mb.PostAndReply GetModels
 
     member private __.Init() : ServerHubInstance<'model, 'server, 'client> =
         let guid = System.Guid.NewGuid()
