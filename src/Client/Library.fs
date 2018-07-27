@@ -21,20 +21,21 @@ type BridgeConfig<'Msg,'ElmishMsg> =
     { path : string
       whenDown : 'ElmishMsg option
       mapping :  'Msg -> 'ElmishMsg
-      retryTime : int }
+      retryTime : int
+      name : string option}
 
     [<PassGenerics>]
-    member private this.Websocket whenDown timeout server =
+    member private this.Websocket whenDown timeout server name =
         let socket = Fable.Import.Browser.WebSocket.Create server
-        Browser.window?(Constants.socketIdentifier) <- Some socket
+        Browser.window?(Constants.socketIdentifier + name) <- Some socket
         socket.onclose <- fun _ ->
             whenDown |> Option.iter (fun msg ->
-            !!Browser.window?(Constants.pureDispatchIdentifier)
+            !!Browser.window?(Constants.pureDispatchIdentifier + name)
             |> Option.iter (fun dispatch -> dispatch msg))
             Fable.Import.Browser.window.setTimeout
                 (this.Websocket whenDown timeout server, timeout) |> ignore
         socket.onmessage <- fun e ->
-            !!Browser.window?(Constants.dispatchIdentifier)
+            !!Browser.window?(Constants.dispatchIdentifier + name)
             |> Option.iter (fun dispatch ->
                  e.data
                  |> string
@@ -49,14 +50,15 @@ type BridgeConfig<'Msg,'ElmishMsg> =
         url.protocol <- url.protocol.Replace("http", "ws")
         url.pathname <- this.path
         url.hash <- ""
-        this.Websocket (this.whenDown |> Option.map JsInterop.toJson) (this.retryTime * 1000) url.href
+        let name = this.name |> Option.map ((+) "_") |> Option.defaultValue ""
+        this.Websocket (this.whenDown |> Option.map JsInterop.toJson) (this.retryTime * 1000) url.href name
         let subs model =
             (fun dispatch ->
-            Browser.window?(Constants.dispatchIdentifier) <- Some
+            Browser.window?(Constants.dispatchIdentifier + name) <- Some
                                                                (JsInterop.ofJson<'Msg>
                                                                 >> this.mapping
                                                                 >> dispatch)
-            Browser.window?(Constants.pureDispatchIdentifier) <- Some
+            Browser.window?(Constants.pureDispatchIdentifier + name) <- Some
                                                                (JsInterop.ofJson<'ElmishMsg>
                                                                 >> dispatch))
             :: program.subscribe model
@@ -72,6 +74,15 @@ module Bridge =
                (fun (s : Fable.Import.Browser.WebSocket) ->
                s.send (JsInterop.toJson (typeof<'Server>.FullName.Replace('+','.'), server)))
 
+    /// Send the message to the server using a named bridge
+    [<PassGenerics>]
+    let NamedSend(name:string, server : 'Server) =
+        !!Browser.window?(Constants.socketIdentifier + "_" + name)
+        |> Option.iter
+               (fun (s : Fable.Import.Browser.WebSocket) ->
+               s.send (JsInterop.toJson (typeof<'Server>.FullName.Replace('+','.'), server)))
+
+
     /// Create a new `BridgeConfig` with the set endpoint
     [<PassGenerics>]
     let endpoint endpoint =
@@ -80,12 +91,18 @@ module Bridge =
             whenDown = None
             mapping = id
             retryTime = 1
+            name = None
         }
 
     /// Set a message to be sent when connection is lost.
     [<PassGenerics>]
     let withWhenDown msg this =
-        { this with whenDown = Some msg}
+        { this with whenDown = Some msg }
+
+    /// Set a name for this bridge if you want to have a secondary one.
+    [<PassGenerics>]
+    let withName name this =
+        { this with name = Some name }
 
     /// Configure how many seconds before reconnecting when the connection is lost.
     /// Values below 1 are ignored
@@ -105,6 +122,7 @@ module Bridge =
             path = this.path
             mapping = map
             retryTime = this.retryTime
+            name = this.name
         }
 
 
@@ -118,7 +136,8 @@ module Program =
         { path = endpoint
           whenDown = None
           mapping = id
-          retryTime = 1}.Attach program
+          retryTime = 1
+          name = None}.Attach program
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.

@@ -28,12 +28,12 @@ type internal ServerHubMessages<'model, 'server, 'client> =
     | DropClient of System.Guid
 
 /// An interface that represents what a ServerHub is able to do
-type IServerHub<'model, 'server, 'client> = 
-    abstract BroadcastClient<'inner> : 'inner -> unit 
-    abstract BroadcastServer<'inner> : 'inner -> unit 
-    abstract SendClientIf<'inner> : ('model -> bool) -> 'inner -> unit 
-    abstract SendServerIf<'inner> : ('model -> bool) -> 'inner -> unit 
-    abstract GetModels : unit -> 'model list 
+type IServerHub<'model, 'server, 'client> =
+    abstract BroadcastClient : 'inner -> unit
+    abstract BroadcastServer : 'inner -> unit
+    abstract SendClientIf : ('model -> bool) -> 'inner -> unit
+    abstract SendServerIf : ('model -> bool) -> 'inner -> unit
+    abstract GetModels : unit -> 'model list
 
 
 /// Holds the data of all connected clients
@@ -108,27 +108,27 @@ type ServerHub<'model, 'server, 'client>() =
                     return! hub data
                 }
             hub Map.empty)
-    
+
     /// Register the client mappings so inner messages can be transformed to the top-level `update` message
-    member this.RegisterClient<'Inner>(map : 'Inner -> 'client) =
+    member this.RegisterClient(map : 'Inner -> 'client) =
         clientMappings <- clientMappings
                           |> Map.add typeof<'Inner>.FullName
                                  (fun (o : obj) -> o :?> 'Inner |> map)
-        
-        this 
+
+        this
 
 
     /// Register the server mappings so inner messages can be transformed to the top-level `update` message
-    member this.RegisterServer<'Inner>(map : 'Inner -> 'server) =
+    member this.RegisterServer(map : 'Inner -> 'server) =
         serverMappings <- serverMappings
                           |> Map.add typeof<'Inner>.FullName
                                  (fun (o : obj) -> o :?> 'Inner |> map)
-        
-        this 
 
-    interface IServerHub<'model, 'server, 'client> with 
+        this
+
+    interface IServerHub<'model, 'server, 'client> with
         /// Send client message for all connected users
-        member __.BroadcastClient<'inner>(msg : 'inner) =
+        member __.BroadcastClient(msg : 'inner) =
             clientMappings
             |> Map.tryFind typeof<'inner>.FullName
             |> Option.iter (fun f ->
@@ -137,7 +137,7 @@ type ServerHub<'model, 'server, 'client>() =
                    |> mb.Post)
 
         /// Send server message for all connected users
-        member __.BroadcastServer<'inner>(msg : 'inner) =
+        member __.BroadcastServer(msg : 'inner) =
             serverMappings
             |> Map.tryFind typeof<'inner>.FullName
             |> Option.iter (fun f ->

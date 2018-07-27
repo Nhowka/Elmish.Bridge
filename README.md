@@ -220,6 +220,8 @@ Besides `Program.withBridge`, there is `Program.withBridgeConfig` that can confi
 
 - For defining a message to be sent to the client when the connection is lost, chain the config with `Bridge.withWhenDown`
 
+- For defining a name for your bridge so you can use more than one, chain the config with `Bridge.withName`. More on that later.
+
 - For defining a mapping so the server can send a different message to the client, chain the config with `Bridge.withMapping`. More on that on the next section.
 
 ## Minimizing shared messages
@@ -284,6 +286,42 @@ devServer: {
     hot: true,
     inline: true
   }
+```
+
+## Named bridges
+
+Sometimes you have more than one feature where the bridge can be useful. You can have a real-time notification when the user's order is approved and also have a chat so it can talk to support. These features have nothing in common, so you don't need to clutter your logic with all remote stuff you do.
+
+When using a name, you can use the method `Bridge.NamedSend` that takes a name (defined with `Bridge.withName`) and the desired message tupled. There's a annoying behavior that prevents it to be curried and partially applied, but here is an workaround:
+
+```fsharp
+let chatMessage x = Bridge.NamedSend("Chat", x)
+let notification x = Bridge.NamedSend("Notification", x)
+```
+
+then you can use it on your `update`:
+
+```fsharp
+  ...
+  match msg with
+  | ClientSentMessage msg ->
+      chatMessage (NewMessage msg)
+  ...
+```
+
+Don't forget to use the same name on the `BridgeConfig`:
+
+```fsharp
+Program.mkProgram init update view
+|> Program.withBridgeConfig
+    (Bridge.endpoint "/socket/chat"
+    |> Bridge.withName "Chat"
+    |> Bridge.withMapping ChatMessages)
+|> Program.withBridgeConfig
+    (Bridge.endpoint "/socket/notification"
+    |> Bridge.withName "Notification"
+    |> Bridge.withMapping NotificationMessages)
+|> ...
 ```
 
 ## Anything more?

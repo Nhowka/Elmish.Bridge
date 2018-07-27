@@ -1,3 +1,7 @@
+#### 1.1.0-rc
+* Makes ServerHub mockable (by @Zaid-Ajaj)
+* Enable multiple bridge connections with named bridges
+
 #### 1.0.1
 * Solves a potential leak
 
