@@ -29,8 +29,6 @@ type internal ServerHubMessages<'model, 'server, 'client> =
 
 /// An interface that represents what a ServerHub is able to do
 type IServerHub<'model, 'server, 'client> = 
-    abstract RegisterClient<'inner> : ('inner -> 'client) -> IServerHub<'model, 'server, 'client>
-    abstract RegisterServer<'inner> : ('inner -> 'server) -> IServerHub<'model, 'server, 'client>
     abstract BroadcastClient<'inner> : 'inner -> unit 
     abstract BroadcastServer<'inner> : 'inner -> unit 
     abstract SendClientIf<'inner> : ('model -> bool) -> 'inner -> unit 
@@ -110,24 +108,25 @@ type ServerHub<'model, 'server, 'client>() =
                     return! hub data
                 }
             hub Map.empty)
+    
+    /// Register the client mappings so inner messages can be transformed to the top-level `update` message
+    member this.RegisterClient<'Inner>(map : 'Inner -> 'client) =
+        clientMappings <- clientMappings
+                          |> Map.add typeof<'Inner>.FullName
+                                 (fun (o : obj) -> o :?> 'Inner |> map)
+        
+        this 
+
+
+    /// Register the server mappings so inner messages can be transformed to the top-level `update` message
+    member this.RegisterServer<'Inner>(map : 'Inner -> 'server) =
+        serverMappings <- serverMappings
+                          |> Map.add typeof<'Inner>.FullName
+                                 (fun (o : obj) -> o :?> 'Inner |> map)
+        
+        this 
 
     interface IServerHub<'model, 'server, 'client> with 
-        /// Register the client mappings so inner messages can be transformed to the top-level `update` message
-        member this.RegisterClient<'Inner>(map : 'Inner -> 'client) =
-            clientMappings <- clientMappings
-                              |> Map.add typeof<'Inner>.FullName
-                                     (fun (o : obj) -> o :?> 'Inner |> map)
-            
-            this :> IServerHub<'model, 'server, 'client>
-
-        /// Register the server mappings so inner messages can be transformed to the top-level `update` message
-        member this.RegisterServer<'Inner>(map : 'Inner -> 'server) =
-            serverMappings <- serverMappings
-                              |> Map.add typeof<'Inner>.FullName
-                                     (fun (o : obj) -> o :?> 'Inner |> map)
-            
-            this :> IServerHub<'model, 'server, 'client>
-
         /// Send client message for all connected users
         member __.BroadcastClient<'inner>(msg : 'inner) =
             clientMappings
