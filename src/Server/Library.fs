@@ -27,15 +27,6 @@ type internal ServerHubMessages<'model, 'server, 'client> =
     | UpdateModel of System.Guid * 'model
     | DropClient of System.Guid
 
-/// An interface that represents what a ServerHub is able to do
-type IServerHub<'model, 'server, 'client> =
-    abstract BroadcastClient : 'inner -> unit
-    abstract BroadcastServer : 'inner -> unit
-    abstract SendClientIf : ('model -> bool) -> 'inner -> unit
-    abstract SendServerIf : ('model -> bool) -> 'inner -> unit
-    abstract GetModels : unit -> 'model list
-
-
 /// Holds the data of all connected clients
 type ServerHub<'model, 'server, 'client>() =
     let mutable clientMappings =
@@ -126,45 +117,50 @@ type ServerHub<'model, 'server, 'client>() =
 
         this
 
-    interface IServerHub<'model, 'server, 'client> with
-        /// Send client message for all connected users
-        member __.BroadcastClient(msg : 'inner) =
-            clientMappings
-            |> Map.tryFind typeof<'inner>.FullName
-            |> Option.iter (fun f ->
-                   f msg
-                   |> ClientBroadcast
-                   |> mb.Post)
+    abstract BroadcastClient : 'inner -> unit
+    abstract BroadcastServer : 'inner -> unit
+    abstract SendClientIf : ('model -> bool) -> 'inner -> unit
+    abstract SendServerIf : ('model -> bool) -> 'inner -> unit
+    abstract GetModels : unit -> 'model list
 
-        /// Send server message for all connected users
-        member __.BroadcastServer(msg : 'inner) =
-            serverMappings
-            |> Map.tryFind typeof<'inner>.FullName
-            |> Option.iter (fun f ->
-                   f msg
-                   |> ServerBroadcast
-                   |> mb.Post)
+    /// Send client message for all connected users
+    default __.BroadcastClient(msg : 'inner) =
+        clientMappings
+        |> Map.tryFind typeof<'inner>.FullName
+        |> Option.iter (fun f ->
+               f msg
+               |> ClientBroadcast
+               |> mb.Post)
 
-        /// Send client message for all connected users if their `model` passes the predicate
-        member __.SendClientIf predicate (msg : 'inner) =
-            clientMappings
-            |> Map.tryFind typeof<'inner>.FullName
-            |> Option.iter (fun f ->
-                   (predicate, f msg)
-                   |> ClientSendIf
-                   |> mb.Post)
+    /// Send server message for all connected users
+    default __.BroadcastServer(msg : 'inner) =
+        serverMappings
+        |> Map.tryFind typeof<'inner>.FullName
+        |> Option.iter (fun f ->
+               f msg
+               |> ServerBroadcast
+               |> mb.Post)
 
-        /// Send server message for all connected users if their `model` passes the predicate
-        member __.SendServerIf predicate (msg : 'inner) =
-            serverMappings
-            |> Map.tryFind typeof<'inner>.FullName
-            |> Option.iter (fun f ->
-                   (predicate, f msg)
-                   |> ServerSendIf
-                   |> mb.Post)
+    /// Send client message for all connected users if their `model` passes the predicate
+    default __.SendClientIf predicate (msg : 'inner) =
+        clientMappings
+        |> Map.tryFind typeof<'inner>.FullName
+        |> Option.iter (fun f ->
+               (predicate, f msg)
+               |> ClientSendIf
+               |> mb.Post)
 
-        /// Return the model of all connected users
-        member __.GetModels() = mb.PostAndReply GetModels
+    /// Send server message for all connected users if their `model` passes the predicate
+    default __.SendServerIf predicate (msg : 'inner) =
+        serverMappings
+        |> Map.tryFind typeof<'inner>.FullName
+        |> Option.iter (fun f ->
+               (predicate, f msg)
+               |> ServerSendIf
+               |> mb.Post)
+
+    /// Return the model of all connected users
+    default __.GetModels() = mb.PostAndReply GetModels
 
     member private __.Init() : ServerHubInstance<'model, 'server, 'client> =
         let guid = System.Guid.NewGuid()
