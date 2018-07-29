@@ -54,6 +54,8 @@ Program.mkProgram init update view
 
 ```
 
+**Warning: Because of a limitation on the reflection on Fable, you can't use primitives or generic types on the input of `Bridge.Send`/`Bridge.NamedSend`**
+
 ### Server
 
 Now you can use the MVU approach on the server, minus the V. That still is just a client thing. For easy usage, the `init` and `update` function first argument is now a `Dispatch<ClientMsg>`. Just call that function with the client message and it will be sent there.
@@ -295,8 +297,9 @@ Sometimes you have more than one feature where the bridge can be useful. You can
 When using a name, you can use the method `Bridge.NamedSend` that takes a name (defined with `Bridge.withName`) and the desired message tupled. There's a annoying behavior that prevents it to be curried and partially applied, but here is an workaround:
 
 ```fsharp
-let chatMessage x = Bridge.NamedSend("Chat", x)
-let notification x = Bridge.NamedSend("Notification", x)
+open Fable.Core
+let [<PassGenerics>] chatMessage x = Bridge.NamedSend("Chat", x)
+let [<PassGenerics>] notification x = Bridge.NamedSend("Notification", x)
 ```
 
 then you can use it on your `update`:
