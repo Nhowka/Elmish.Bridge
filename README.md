@@ -260,7 +260,11 @@ And configure the client like this:
 Program.mkProgram init update view
 |> Program.withBridgeConfig(
     Bridge.endpoint Shared.endpoint
-    |> Bridge.withMapping  (InnerBridge>>SomeMsg))
+    |> Bridge.withMapping 
+        (fun bridgeMsg ->
+            bridgeMsg
+            |> InnerBridge
+            |> SomeMsg))
 |> Program.withReact "elmish-app"
 ```
 
