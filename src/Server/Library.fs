@@ -206,15 +206,17 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
 
 
     let write (o : 'client) = Newtonsoft.Json.JsonConvert.SerializeObject(o, c)
-    /// Server msg passed to the `update` function when the connection is closed
+    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
     member val WhenDown : 'server option = None with get, set
-    /// Registers the `ServerHub` that will be used by this socket connections
+    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
     member val ServerHub : ServerHub<'model, 'server, 'client> option = None with get, set
 
+    /// Server msg passed to the `update` function when the connection is closed
     member this.WithWhenDown n =
         this.WhenDown <- Some n
         this
 
+    /// Registers the `ServerHub` that will be used by this socket connections
     member this.WithServerHub sh =
         this.ServerHub <- Some sh
         this
@@ -245,6 +247,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
             oldLogInit m
             log m
         this
+
     /// Add a log function for logging type names on registering
     member this.AddRegisterLogging log =
         let oldLogRegister = logRegister
