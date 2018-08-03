@@ -185,8 +185,6 @@ type ServerHub<'model, 'server, 'client>() =
         |> Option.map (fun sh -> sh.Init())
         |> Option.defaultValue ServerHubInstance.Empty
 
-type ServerCreator<'server, 'impl> = string -> ((string -> Async<unit>) -> MailboxProcessor<Choice<'server, unit>>) -> 'impl
-
 /// Defines server configuration
 type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init, update) =
     let mutable subscribe = fun _ -> Cmd.none
@@ -206,19 +204,27 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
 
 
     let write (o : 'client) = Newtonsoft.Json.JsonConvert.SerializeObject(o, c)
-    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-    member val WhenDown : 'server option = None with get, set
-    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-    member val ServerHub : ServerHub<'model, 'server, 'client> option = None with get, set
+    let read dispatch str =
+        logSMsg str
+        let (name : string, o : Newtonsoft.Json.Linq.JToken) =
+            Newtonsoft.Json.JsonConvert.DeserializeObject
+                (str, typeof<string * Newtonsoft.Json.Linq.JToken>, c) :?> _
+        mappings
+        |> Map.tryFind name
+        |> Option.iter (fun e -> e o |> dispatch)
+
+
+    let mutable whenDown : 'server option = None
+    let mutable serverHub : ServerHub<'model, 'server, 'client> option = None
 
     /// Server msg passed to the `update` function when the connection is closed
     member this.WithWhenDown n =
-        this.WhenDown <- Some n
+        whenDown <- Some n
         this
 
     /// Registers the `ServerHub` that will be used by this socket connections
     member this.WithServerHub sh =
-        this.ServerHub <- Some sh
+        serverHub <- Some sh
         this
 
     /// Register the server mappings so inner messages can be transformed to the top-level `update` message
@@ -292,51 +298,47 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     member this.Start server (arg : 'arg) : 'impl =
         this.Register(id) |> ignore
         let inbox action =
-            MailboxProcessor.Start(fun (mb : MailboxProcessor<Choice<'server, unit>>) ->
-                let clientDispatch (a : 'client) =
-                    a
-                    |> write
-                    |> action
-                    |> Async.Start
-                let hubInstance = ServerHub.Initialize this.ServerHub
+            let mb =
+              MailboxProcessor.Start(fun (mb : MailboxProcessor<'server option>) ->
+                let clientDispatch =
+                    write
+                    >> action
+                    >> Async.Start
+                let hubInstance = ServerHub.Initialize serverHub
                 let model, msgs = init clientDispatch arg
                 logInit model
                 let sub =
                     try
-                        hubInstance.Add model (Choice1Of2 >> mb.Post)
-                            clientDispatch
+                        hubInstance.Add model (Some >> mb.Post) clientDispatch
                         subscribe model
                     with _ -> Cmd.none
-                sub @ msgs |> List.iter (fun sub -> sub (Choice1Of2 >> mb.Post))
+                sub @ msgs |> List.iter (fun sub -> sub (Some >> mb.Post))
                 let rec loop (state : 'model) =
                     async {
                         let! msg = mb.Receive()
                         match msg with
-                        | Choice1Of2 msg ->
+                        | Some msg ->
                             logMsg msg
                             let model, msgs = update clientDispatch msg state
                             logModel model
                             msgs
                             |> List.iter
-                                   (fun sub -> sub (Choice1Of2 >> mb.Post))
+                                   (fun sub -> sub (Some >> mb.Post))
                             hubInstance.Update model
                             return! loop model
-                        | Choice2Of2() ->
+                        | None ->
+                            whenDown
+                            |> Option.iter
+                                (fun msg ->
+                                    logMsg msg
+                                    let model, _ = update clientDispatch msg state
+                                    logModel model)
                             hubInstance.Remove()
                             return ()
                     }
                 loop model)
+            (Some >> mb.Post |> read),(fun () -> mb.Post None)
         server endpoint inbox
-    /// Internal use only
-    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-    member __.Read str =
-        logSMsg str
-        let (name : string, o : Newtonsoft.Json.Linq.JToken) =
-            Newtonsoft.Json.JsonConvert.DeserializeObject
-                (str, typeof<string * Newtonsoft.Json.Linq.JToken>, c) :?> _
-        mappings
-        |> Map.tryFind name
-        |> Option.map (fun e -> e o)
 
 [<RequireQualifiedAccess>]
 module Bridge =
@@ -375,9 +377,9 @@ module Bridge =
     /// `arg`: argument to pass to the `init` function.
     /// `program`: program created with `mkProgram`.
     let runWith server arg (program : BridgeServer<_, _, _, _, _>) =
-        program.Start (server program) arg
+        program.Start server arg
 
     /// Creates a websocket loop with `unit` for the `init` function.
     /// `program`: program created with `mkProgram`.
     let run server (program : BridgeServer<_, _, _, _, _>) =
-        program.Start (server program) ()
+        program.Start server ()

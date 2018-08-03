@@ -1,3 +1,7 @@
+#### 1.1.1
+* Simplify implementators logic
+* Uses a try-with on the Giraffe socket to always notify that the connection is closed
+
 #### 1.1.0
 * Makes ServerHub mockable (by @Zaid-Ajaj)
 * Enable multiple bridge connections with named bridges
