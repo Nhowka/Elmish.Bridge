@@ -333,4 +333,4 @@ Program.mkProgram init update view
 
 ## Anything more?
 
-This documentation is on an early stage, if you have any questions feel free to open an issue or PR so we can have it in a good shape. You can check a test project [here](https://github.com/Nhowka/TestRemoting). I hope you enjoy using it!
+This documentation is on an early stage, if you have any questions feel free to open an issue or PR so we can have it in a good shape. You can check a test project [here](https://github.com/Nhowka/BridgeChat). I hope you enjoy using it!
