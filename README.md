@@ -218,6 +218,8 @@ Besides `Program.withBridge`, there is `Program.withBridgeConfig` that can confi
 
 - As the endpoint is mandatory, create the `BridgeConfig` using `Bridge.endpoint`
 
+- If you need that endpoint to be relative instead of absolute, chain the config with `Bridge.withUrlMode`. More on that later.
+
 - For defining a time in seconds to reconnect, chain the config with `Bridge.withRetryTime`
 
 - For defining a message to be sent to the client when the connection is lost, chain the config with `Bridge.withWhenDown`
@@ -260,7 +262,7 @@ And configure the client like this:
 Program.mkProgram init update view
 |> Program.withBridgeConfig(
     Bridge.endpoint Shared.endpoint
-    |> Bridge.withMapping 
+    |> Bridge.withMapping
         (fun bridgeMsg ->
             bridgeMsg
             |> InnerBridge
@@ -269,6 +271,15 @@ Program.mkProgram init update view
 ```
 
 That way, only the `BridgeAware` type needs to be on the shared file
+
+## Configuring the endpoint
+
+Sometimes you may need that path to be relative with the current URL. Maybe you want to define an external endpoint. For that, you can pass the following cases to `Bridge.withUrlMode`:
+
+- `Replace`: the default. Uses the current host and replaces the path with the endpoint defined.
+- `Append`: Appends the endpoint defined to the current URL.
+- `Raw`: Uses the defined path as a complete URL.
+- `Calculated`: Takes an extra function `(string -> string -> string)`. The functions arguments are the current URL and the endpoint defined, returning the resulting URL.
 
 ## Webpack caveat
 

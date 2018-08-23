@@ -1,3 +1,6 @@
+#### 1.2.0
+* Enables better control over the endpoint definition
+
 #### 1.1.1
 * Simplify implementators logic
 * Uses a try-with on the Giraffe socket to always notify that the connection is closed
