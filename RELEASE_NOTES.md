@@ -1,3 +1,6 @@
+#### 1.2.1
+* Prevents the hash from being on the url when using `url-polyfill`
+
 #### 1.2.0
 * Enables better control over the endpoint definition
 

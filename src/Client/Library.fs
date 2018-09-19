@@ -79,7 +79,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                 url.protocol <- url.protocol.Replace("http", "ws")
                 url
         let name = this.name |> Option.map ((+) "_") |> Option.defaultValue ""
-        this.Websocket (this.whenDown |> Option.map JsInterop.toJson) (this.retryTime * 1000) url.href name
+        this.Websocket (this.whenDown |> Option.map JsInterop.toJson) (this.retryTime * 1000) (url.href.TrimEnd '#') name
         let subs model =
             (fun dispatch ->
             Browser.window?(Constants.dispatchIdentifier + name) <- Some
