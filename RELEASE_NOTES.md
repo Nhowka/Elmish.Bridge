@@ -1,3 +1,6 @@
+#### 1.2.3
+* Prevent unwanted eagerness
+
 #### 1.2.2
 * Reconnect when closed and also on errors
 

@@ -49,7 +49,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
             !!Browser.window?(Constants.pureDispatchIdentifier + name)
             |> Option.iter (fun dispatch -> dispatch msg))
             Fable.Import.Browser.window.setTimeout
-                (this.Websocket whenDown timeout server, timeout) |> ignore
+                ((fun () -> this.Websocket whenDown timeout server), timeout, ()) |> ignore
         try
             let socket = Fable.Import.Browser.WebSocket.Create server
             Browser.window?(Constants.socketIdentifier + name) <- Some socket
