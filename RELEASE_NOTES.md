@@ -1,3 +1,6 @@
+#### 1.2.2
+* Reconnect when closed and also on errors
+
 #### 1.2.1
 * Prevents the hash from being on the url when using `url-polyfill`
 

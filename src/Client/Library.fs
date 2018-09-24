@@ -44,20 +44,23 @@ type BridgeConfig<'Msg,'ElmishMsg> =
 
     [<PassGenerics>]
     member private this.Websocket whenDown timeout server name =
-        let socket = Fable.Import.Browser.WebSocket.Create server
-        Browser.window?(Constants.socketIdentifier + name) <- Some socket
-        socket.onclose <- fun _ ->
+        let retry _ =
             whenDown |> Option.iter (fun msg ->
             !!Browser.window?(Constants.pureDispatchIdentifier + name)
             |> Option.iter (fun dispatch -> dispatch msg))
             Fable.Import.Browser.window.setTimeout
                 (this.Websocket whenDown timeout server, timeout) |> ignore
-        socket.onmessage <- fun e ->
-            !!Browser.window?(Constants.dispatchIdentifier + name)
-            |> Option.iter (fun dispatch ->
-                 e.data
-                 |> string
-                 |> dispatch)
+        try
+            let socket = Fable.Import.Browser.WebSocket.Create server
+            Browser.window?(Constants.socketIdentifier + name) <- Some socket
+            socket.onclose <- retry
+            socket.onmessage <- fun e ->
+                !!Browser.window?(Constants.dispatchIdentifier + name)
+                |> Option.iter (fun dispatch ->
+                     e.data
+                     |> string
+                     |> dispatch)
+        with _ -> retry ()
 
     [<PassGenerics>]
     member internal this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>) =
