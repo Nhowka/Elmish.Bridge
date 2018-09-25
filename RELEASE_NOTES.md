@@ -1,3 +1,6 @@
+#### 1.2.4
+* Fix the reconnection for real this time
+
 #### 1.2.3
 * Prevent unwanted eagerness
 
