@@ -1,3 +1,3 @@
 group Server
     Elmish
-    Fable.JsonConverter
+    Thoth.Json.Net

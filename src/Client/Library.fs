@@ -4,6 +4,7 @@ open Elmish
 open Fable.Core
 open Fable.Import
 open Fable.Core.JsInterop
+open Thoth.Json
 
 [<RequireQualifiedAccess>]
 module internal Constants =
@@ -42,7 +43,6 @@ type BridgeConfig<'Msg,'ElmishMsg> =
       name : string option
       urlMode : UrlMode}
 
-    [<PassGenerics>]
     member private this.Websocket whenDown timeout server name =
         let socket = Fable.Import.Browser.WebSocket.Create server
         Browser.window?(Constants.socketIdentifier + name) <- Some socket
@@ -59,8 +59,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                  |> string
                  |> dispatch)
 
-    [<PassGenerics>]
-    member internal this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>) =
+    member internal this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>, [<Inject>] ?resolverMsg: ITypeResolver<'Msg>, [<Inject>] ?resolverElmishMsg: ITypeResolver<'ElmishMsg> ) =
         let url =
             match this.urlMode with
             | Replace ->
@@ -79,39 +78,43 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                 url.protocol <- url.protocol.Replace("http", "ws")
                 url
         let name = this.name |> Option.map ((+) "_") |> Option.defaultValue ""
-        this.Websocket (this.whenDown |> Option.map JsInterop.toJson) (this.retryTime * 1000) (url.href.TrimEnd '#') name
+        this.Websocket (this.whenDown |> Option.map (fun e -> Thoth.Json.Encode.Auto.toString(0,e))) (this.retryTime * 1000) (url.href.TrimEnd '#') name
+        let msgDecoder = Thoth.Json.Decode.Auto.generateDecoder(resolver=resolverMsg.Value)
+
+        let elmishMsgDecoder = Thoth.Json.Decode.Auto.generateDecoder(resolver=resolverElmishMsg.Value)
         let subs model =
             (fun dispatch ->
             Browser.window?(Constants.dispatchIdentifier + name) <- Some
-                                                               (JsInterop.ofJson<'Msg>
-                                                                >> this.mapping
-                                                                >> dispatch)
+                                                               (Thoth.Json.Decode.fromString msgDecoder
+                                                                >> Result.map this.mapping
+                                                                >> (function Ok e -> dispatch e | Error _ -> ()))
             Browser.window?(Constants.pureDispatchIdentifier + name) <- Some
-                                                               (JsInterop.ofJson<'ElmishMsg>
-                                                                >> dispatch))
+                                                               (Thoth.Json.Decode.fromString elmishMsgDecoder
+                                                                >> (function Ok e -> dispatch e | Error _ -> ())))
             :: program.subscribe model
         { program with subscribe = subs }
 
-[<RequireQualifiedAccess>]
-module Bridge =
+type Bridge private() =
     /// Send the message to the server
-    [<PassGenerics>]
-    let Send(server : 'Server) =
+    static member Send(server : 'Server, [<Inject>] ?resolver: ITypeResolver<'Server>) =
+        let sentType = resolver.Value.ResolveType()
         !!Browser.window?(Constants.socketIdentifier)
         |> Option.iter
                (fun (s : Fable.Import.Browser.WebSocket) ->
-               s.send (JsInterop.toJson (typeof<'Server>.FullName.Replace('+','.'), server)))
+               s.send (Thoth.Json.Encode.Auto.toString(0,(sentType.FullName.Replace('+','.'), server))))
 
     /// Send the message to the server using a named bridge
-    [<PassGenerics>]
-    let NamedSend(name:string, server : 'Server) =
+    static member NamedSend(name:string, server : 'Server, [<Inject>] ?resolver: ITypeResolver<'Server>) =
+        let sentType = resolver.Value.ResolveType()
         !!Browser.window?(Constants.socketIdentifier + "_" + name)
         |> Option.iter
                (fun (s : Fable.Import.Browser.WebSocket) ->
-               s.send (JsInterop.toJson (typeof<'Server>.FullName.Replace('+','.'), server)))
+               s.send (Thoth.Json.Encode.Auto.toString(0,(sentType.FullName.Replace('+','.'), server))))
+
+[<RequireQualifiedAccess>]
+module Bridge =
 
     /// Create a new `BridgeConfig` with the set endpoint
-    [<PassGenerics>]
     let endpoint endpoint =
         {
             path = endpoint
@@ -123,7 +126,6 @@ module Bridge =
         }
 
     /// Set a message to be sent when connection is lost.
-    [<PassGenerics>]
     let withWhenDown msg this =
         { this with whenDown = Some msg }
 
@@ -132,18 +134,15 @@ module Bridge =
     /// `Append` : adds the endpoint to the current path
     /// `Raw`: uses the given endpoint as a complete URL
     /// `Calculated` : takes a function that given the current URL and the endpoint, calculates the complete url to the socket
-    [<PassGenerics>]
     let withUrlMode mode this =
         { this with urlMode = mode }
 
     /// Set a name for this bridge if you want to have a secondary one.
-    [<PassGenerics>]
     let withName name this =
         { this with name = Some name }
 
     /// Configure how many seconds before reconnecting when the connection is lost.
     /// Values below 1 are ignored
-    [<PassGenerics>]
     let withRetryTime sec this =
         if sec < 1 then
             this
@@ -152,7 +151,6 @@ module Bridge =
 
     /// Configure a mapping to the top-level message so the server can send an inner message
     /// That enables using just a subset of the messages on the shared project
-    [<PassGenerics>]
     let withMapping map this =
         {
             whenDown = this.whenDown
@@ -168,8 +166,7 @@ module Program =
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
-    [<PassGenerics>]
-    let withBridge endpoint (program : Program<_, _, 'Msg, _>) =
+    let inline withBridge endpoint (program : Program<_, _, _, _>) =
         { path = endpoint
           whenDown = None
           mapping = id
@@ -179,6 +176,5 @@ module Program =
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
-    [<PassGenerics>]
-    let withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, 'Msg, _>) =
+    let inline withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
         config.Attach program

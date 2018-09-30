@@ -3,13 +3,14 @@ group Shared
   source https://api.nuget.org/v3/index.json
 
   nuget FSharp.Core
-  nuget Fable.Elmish
+  nuget Fable.Elmish prerelease
+  nuget Thoth.Json prerelease
 
 group Server
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget Fable.JsonConverter
+  nuget Thoth.Json.Net prerelease
   nuget Elmish
 
 group Suave
@@ -22,7 +23,7 @@ group Giraffe
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget Giraffe
+  nuget Giraffe < 3.0.0
   nuget Microsoft.AspNetCore.WebSockets
 
 group Build
