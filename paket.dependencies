@@ -4,12 +4,14 @@ group Shared
 
   nuget FSharp.Core
   nuget Fable.Elmish
+  nuget Fable.Core
+  nuget Thoth.Json
 
 group Server
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget Fable.JsonConverter
+  nuget Thoth.Json.Net
   nuget Elmish
 
 group Suave

@@ -193,11 +193,12 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     let mutable logSMsg = ignore
     let mutable logInit = ignore
     let mutable logModel = ignore
-    static let c = Fable.JsonConverter()
+    static let c = Thoth.Json.Net.Converters.converters
 
     static let s =
         let js = Newtonsoft.Json.JsonSerializer()
-        js.Converters.Add c
+        for c in Thoth.Json.Net.Converters.converters do
+            js.Converters.Add c
         js
 
     let mutable mappings = Map.empty
@@ -207,6 +208,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     let read dispatch str =
         logSMsg str
         let (name : string, o : Newtonsoft.Json.Linq.JToken) =
+
             Newtonsoft.Json.JsonConvert.DeserializeObject
                 (str, typeof<string * Newtonsoft.Json.Linq.JToken>, c) :?> _
         mappings

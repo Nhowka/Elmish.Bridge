@@ -1,3 +1,6 @@
+#### 2.0.0
+* Compatible with Fable 2
+
 #### 1.2.4
 * Fix the reconnection for real this time
 
