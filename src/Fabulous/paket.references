@@ -1,0 +1,4 @@
+group Fabulous
+  Fabulous.Core
+  Thoth.Json.Net
+  System.Net.WebSockets
