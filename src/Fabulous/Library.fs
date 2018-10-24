@@ -72,18 +72,26 @@ module Bridge =
                 lock ws (fun () ->
                     match !r with
                     | None ->
-                        let ws = new ClientWebSocket()
-                        r := Some ws
-                        ws.ConnectAsync(Uri(server), CancellationToken.None) |> Async.AwaitTask |> Async.StartImmediate
+                        async {
+                            let ws = new ClientWebSocket()
+                            r := Some ws
+                            match! ws.ConnectAsync(Uri(server), CancellationToken.None)
+                                    |> Async.AwaitTask
+                                    |> Async.Catch with
+                            | Choice1Of2 () -> ()
+                            | Choice2Of2 _ ->
+                                r := None
+                                config.whenDown |> Option.iter dispatch}
+                        |> Async.StartImmediate                        
                     | Some _ -> ())
             websocket config.path ws
-            let rec receiver buffer =              
+            let recBuffer = ArraySegment(Array.zeroCreate 4096)
+            let rec receiver buffer =
               async {
-                    let recBuffer = Array.zeroCreate 4096
                     match !ws with
-                    |Some webs ->
-                        let! msg = webs.ReceiveAsync(ArraySegment(recBuffer),CancellationToken.None) |> Async.AwaitTask
-                        match msg.MessageType,recBuffer.[0..msg.Count-1],msg.EndOfMessage,msg.CloseStatus with
+                    |Some webs when webs.State = WebSocketState.Open ->
+                        let! msg = webs.ReceiveAsync(recBuffer,CancellationToken.None) |> Async.AwaitTask
+                        match msg.MessageType,recBuffer.Array.[0..msg.Count-1],msg.EndOfMessage,msg.CloseStatus with
                         |_,_,_,s when s.HasValue ->
                             do! webs.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null,CancellationToken.None) |> Async.AwaitTask
                             (webs :> IDisposable).Dispose()
@@ -104,6 +112,9 @@ module Bridge =
                             else
                                 return! receiver data
                         | _ -> return! receiver buffer
+                    | Some _ ->
+                        do! Async.Sleep (1000 * config.retryTime)
+                        return! receiver []
                     | None ->
                         websocket config.path ws
                         return! receiver []
@@ -122,7 +133,7 @@ module Bridge =
                       return! loop() }
                 loop ()
                 )
-            mappings <- mappings |> Map.add config.name sender.Post            
+            mappings <- mappings |> Map.add config.name sender.Post
           [dispatcher]
         Program.withSubscription sub program
 
