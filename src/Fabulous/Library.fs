@@ -80,6 +80,7 @@ module Bridge =
                                     |> Async.Catch with
                             | Choice1Of2 () -> ()
                             | Choice2Of2 _ ->
+                                (ws :> IDisposable).Dispose()
                                 r := None
                                 config.whenDown |> Option.iter dispatch}
                         |> Async.StartImmediate                        
