@@ -15,7 +15,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
 
 [<RequireQualifiedAccess>]
 module Bridge =
-    let mutable mappings : Map<string option, string -> unit> = Map.empty
+    let mutable private mappings : Map<string option, string -> unit> = Map.empty
     /// Create a new `BridgeConfig` with the set endpoint
     let endpoint endpoint =
         {
