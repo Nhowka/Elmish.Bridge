@@ -7,6 +7,14 @@ group Shared
   nuget Fable.Core
   nuget Thoth.Json
 
+group Fabulous
+  storage: none
+  source https://api.nuget.org/v3/index.json
+
+  nuget Fabulous.Core
+  nuget Thoth.Json.Net
+  nuget System.Net.WebSockets
+
 group Server
   storage: none
   source https://api.nuget.org/v3/index.json
