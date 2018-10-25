@@ -75,11 +75,10 @@ module Bridge =
                         async {
                             let ws = new ClientWebSocket()
                             r := Some ws
-                            match! ws.ConnectAsync(Uri(server), CancellationToken.None)
-                                    |> Async.AwaitTask
-                                    |> Async.Catch with
-                            | Choice1Of2 () -> ()
-                            | Choice2Of2 _ ->
+                            try
+                                do! ws.ConnectAsync(Uri(server), CancellationToken.None) |> Async.AwaitTask
+                            with
+                            | _ ->
                                 (ws :> IDisposable).Dispose()
                                 r := None
                                 config.whenDown |> Option.iter dispatch}
@@ -87,20 +86,24 @@ module Bridge =
                     | Some _ -> ())
             websocket config.path ws
             let recBuffer = ArraySegment(Array.zeroCreate 4096)
+            let cleanSocket (webs : ClientWebSocket) =
+                async {
+                    do! webs.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null,CancellationToken.None)
+                                |> Async.AwaitTask |> Async.Catch |> Async.Ignore
+                    (webs :> IDisposable).Dispose()
+                    ws := None
+                    config.whenDown |> Option.iter dispatch
+                    do! Async.Sleep (1000 * config.retryTime)
+                }
             let rec receiver buffer =
               async {
                     match !ws with
                     |Some webs when webs.State = WebSocketState.Open ->
-                      match! webs.ReceiveAsync(recBuffer,CancellationToken.None) |> Async.AwaitTask |> Async.Catch with
-                      |Choice1Of2 msg ->
+                      try
+                        let! msg = webs.ReceiveAsync(recBuffer,CancellationToken.None) |> Async.AwaitTask
                         match msg.MessageType,recBuffer.Array.[0..msg.Count-1],msg.EndOfMessage,msg.CloseStatus with
                         |_,_,_,s when s.HasValue ->
-                            do! webs.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null,CancellationToken.None)
-                                |> Async.AwaitTask |> Async.Catch |> Async.Ignore
-                            (webs :> IDisposable).Dispose()
-                            ws := None
-                            config.whenDown |> Option.iter dispatch
-                            do! Async.Sleep (1000 * config.retryTime)
+                            do! cleanSocket webs
                             return! receiver []
                         | WebSocketMessageType.Text, data, complete, _ ->
                             let data = data::buffer
@@ -115,14 +118,15 @@ module Bridge =
                             else
                                 return! receiver data
                         | _ -> return! receiver buffer
-                      |Choice2Of2 _ ->
-                            (webs :> IDisposable).Dispose()
-                            ws := None
-                            config.whenDown |> Option.iter dispatch
-                            do! Async.Sleep (1000 * config.retryTime)
+                      with
+                      | _ ->
+                            do! cleanSocket webs
                             return! receiver []
-                    | Some _ ->
+                    | Some webs when webs.State = WebSocketState.Connecting ->
                         do! Async.Sleep (1000 * config.retryTime)
+                        return! receiver []
+                    | Some webs ->
+                        do! cleanSocket webs
                         return! receiver []
                     | None ->
                         websocket config.path ws
@@ -131,14 +135,17 @@ module Bridge =
             Async.StartImmediate (receiver [])
             let sender = MailboxProcessor.Start (fun mb ->
                 let rec loop () = async {
+                    let! (msg : string) = mb.Receive()
                     match !ws with
-                    | Some ws ->
-                      let! (msg : string) = mb.Receive()
+                    | Some ws when ws.State = WebSocketState.Open ->                      
                       let arr = msg |> System.Text.Encoding.UTF8.GetBytes |> ArraySegment
                       do! ws.SendAsync(arr,WebSocketMessageType.Text, true, CancellationToken.None)
                         |> Async.AwaitTask |> Async.Catch |> Async.Ignore
                       return! loop()
-                    | None ->
+                    | Some ws when ws.State = WebSocketState.Connecting ->
+                      do! Async.Sleep 1000
+                      return! loop()
+                    | _ ->
                       websocket config.path ws
                       return! loop() }
                 loop ()
