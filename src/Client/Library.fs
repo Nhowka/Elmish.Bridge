@@ -3,18 +3,7 @@ namespace Elmish.Bridge
 open Elmish
 open Fable.Core
 open Fable.Import
-open Fable.Core.JsInterop
 open Thoth.Json
-
-[<RequireQualifiedAccess>]
-module internal Constants =
-    [<Literal>]
-    let internal dispatchIdentifier = "elmish_bridge_message_dispatch"
-    [<Literal>]
-    let internal pureDispatchIdentifier = "elmish_original_message_dispatch"
-
-    [<Literal>]
-    let internal socketIdentifier = "elmish_bridge_socket"
 
 [<RequireQualifiedAccess>]
 module internal Helpers =
@@ -25,6 +14,8 @@ module internal Helpers =
         url.protocol <- url.protocol.Replace("http", "ws")
         url.hash <- ""
         url
+
+    let mutable internal mappings : Map<string option, string -> unit> = Map.empty
 
 /// Configures the mode about how the endpoint is used
 type UrlMode =
@@ -43,25 +34,11 @@ type BridgeConfig<'Msg,'ElmishMsg> =
       name : string option
       urlMode : UrlMode}
 
-    member private this.Websocket whenDown timeout server name =
-        let socket = Fable.Import.Browser.WebSocket.Create server
-        Browser.window?(Constants.socketIdentifier + name) <- Some socket
-        socket.onclose <- fun _ ->
-            whenDown |> Option.iter (fun msg ->
-            !!Browser.window?(Constants.pureDispatchIdentifier + name)
-            |> Option.iter (fun dispatch -> dispatch msg))
-            Fable.Import.Browser.window.setTimeout
-                ((fun () -> this.Websocket whenDown timeout server name), timeout, ()) |> ignore
-        socket.onmessage <- fun e ->
-            !!Browser.window?(Constants.dispatchIdentifier + name)
-            |> Option.iter (fun dispatch ->
-                 e.data
-                 |> string
-                 |> dispatch)
-
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
     member this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>, [<Inject>] ?resolverMsg: ITypeResolver<'Msg>, [<Inject>] ?resolverElmishMsg: ITypeResolver<'ElmishMsg> ) =
+     let subs _ =
+       [fun dispatch ->
         let url =
             match this.urlMode with
             | Replace ->
@@ -79,39 +56,56 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                 let url = Fable.Import.Browser.URL.Create this.path
                 url.protocol <- url.protocol.Replace("http", "ws")
                 url
-        let name = this.name |> Option.map ((+) "_") |> Option.defaultValue ""
-        this.Websocket (this.whenDown |> Option.map (fun e -> Thoth.Json.Encode.Auto.toString(0,e))) (this.retryTime * 1000) (url.href.TrimEnd '#') name
+        let wsref : Browser.WebSocket option ref = ref None
         let msgDecoder = Thoth.Json.Decode.Auto.generateDecoder(resolver=resolverMsg.Value)
+        let rec websocket timeout server name =
+            match !wsref with
+            |Some _ -> ()
+            |None ->
+                let socket = Fable.Import.Browser.WebSocket.Create server
+                wsref := Some socket
+                socket.onclose <- fun _ ->
+                    wsref := None
+                    this.whenDown |> Option.iter dispatch
+                    Fable.Import.Browser.window.setTimeout
+                        ((fun () -> websocket timeout server name), timeout, ()) |> ignore
+                socket.onmessage <- fun e ->
+                         e.data
+                         |> string
+                         |> Decode.fromString msgDecoder
+                         |> function
+                            | Ok msg -> msg |> this.mapping |> dispatch
+                            | _ -> ()
 
-        let elmishMsgDecoder = Thoth.Json.Decode.Auto.generateDecoder(resolver=resolverElmishMsg.Value)
-        let subs model =
-            (fun dispatch ->
-            Browser.window?(Constants.dispatchIdentifier + name) <- Some
-                                                               (Thoth.Json.Decode.fromString msgDecoder
-                                                                >> Result.map this.mapping
-                                                                >> (function Ok e -> dispatch e | Error _ -> ()))
-            Browser.window?(Constants.pureDispatchIdentifier + name) <- Some
-                                                               (Thoth.Json.Decode.fromString elmishMsgDecoder
-                                                                >> (function Ok e -> dispatch e | Error _ -> ())))
-            :: program.subscribe model
-        { program with subscribe = subs }
+        let name = this.name |> Option.map ((+) "_") |> Option.defaultValue ""
+        websocket (this.retryTime * 1000) (url.href.TrimEnd '#') name
+        Helpers.mappings <-
+            Helpers.mappings
+            |> Map.add this.name
+                (fun e ->
+                    match !wsref with
+                    | Some socket -> socket.send e
+                    | None -> ())]
+     program |> Program.withSubscription subs
 
 type Bridge private() =
     /// Send the message to the server
     static member Send(server : 'Server, [<Inject>] ?resolver: ITypeResolver<'Server>) =
         let sentType = resolver.Value.ResolveType()
-        !!Browser.window?(Constants.socketIdentifier)
+        Helpers.mappings
+        |> Map.tryFind None
         |> Option.iter
-               (fun (s : Fable.Import.Browser.WebSocket) ->
-               s.send (Thoth.Json.Encode.Auto.toString(0,(sentType.FullName.Replace('+','.'), server))))
+               (fun s ->
+                    s (Thoth.Json.Encode.Auto.toString(0,(sentType.FullName.Replace('+','.'), server))))
 
     /// Send the message to the server using a named bridge
     static member NamedSend(name:string, server : 'Server, [<Inject>] ?resolver: ITypeResolver<'Server>) =
         let sentType = resolver.Value.ResolveType()
-        !!Browser.window?(Constants.socketIdentifier + "_" + name)
+        Helpers.mappings
+        |> Map.tryFind (Some name)
         |> Option.iter
-               (fun (s : Fable.Import.Browser.WebSocket) ->
-               s.send (Thoth.Json.Encode.Auto.toString(0,(sentType.FullName.Replace('+','.'), server))))
+               (fun s ->
+               s (Thoth.Json.Encode.Auto.toString(0,(sentType.FullName.Replace('+','.'), server))))
 
 [<RequireQualifiedAccess>]
 module Bridge =
