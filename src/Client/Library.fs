@@ -58,7 +58,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                 url
         let wsref : Browser.WebSocket option ref = ref None
         let msgDecoder = Thoth.Json.Decode.Auto.generateDecoder(resolver=resolverMsg.Value)
-        let rec websocket timeout server name =
+        let rec websocket timeout server =
             match !wsref with
             |Some _ -> ()
             |None ->
@@ -68,7 +68,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                     wsref := None
                     this.whenDown |> Option.iter dispatch
                     Fable.Import.Browser.window.setTimeout
-                        ((fun () -> websocket timeout server name), timeout, ()) |> ignore
+                        ((fun () -> websocket timeout server), timeout, ()) |> ignore
                 socket.onmessage <- fun e ->
                          e.data
                          |> string
@@ -76,9 +76,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                          |> function
                             | Ok msg -> msg |> this.mapping |> dispatch
                             | _ -> ()
-
-        let name = this.name |> Option.map ((+) "_") |> Option.defaultValue ""
-        websocket (this.retryTime * 1000) (url.href.TrimEnd '#') name
+        websocket (this.retryTime * 1000) (url.href.TrimEnd '#')
         Helpers.mappings <-
             Helpers.mappings
             |> Map.add this.name
