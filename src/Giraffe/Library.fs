@@ -66,4 +66,4 @@ module Giraffe =
         route endpoint >=> ws
 
     /// Prepare app to use websockets
-    let useWebSockets (app : IApplicationBuilder) = app.UseWebSockets()
+    let useWebSockets (app : IApplicationBuilder) = app.UseWebSockets(WebSocketOptions(KeepAliveInterval=TimeSpan.FromSeconds 30.))
