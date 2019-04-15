@@ -1,16 +1,17 @@
 namespace Elmish.Bridge
 
+open Browser
+open Browser.Types
 open Elmish
 open Fable.Core
-open Fable.Import
-open Thoth.Json
+open Fable.SimpleJson
 
 [<RequireQualifiedAccess>]
 module internal Helpers =
     let getBaseUrl() =
         let url =
-            Fable.Import.Browser.window.location.href
-            |> Fable.Import.Browser.URL.Create
+            Dom.window.location.href
+            |> Url.URL.Create
         url.protocol <- url.protocol.Replace("http", "ws")
         url.hash <- ""
         url
@@ -51,28 +52,25 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                 url
             | Calculated f ->
                 let url = Helpers.getBaseUrl()
-                f url.href this.path |> Fable.Import.Browser.URL.Create
+                f url.href this.path |> Url.URL.Create
             | Raw ->
-                let url = Fable.Import.Browser.URL.Create this.path
+                let url = Browser.Url.URL.Create this.path
                 url.protocol <- url.protocol.Replace("http", "ws")
                 url
-        let wsref : Browser.WebSocket option ref = ref None
-        let msgDecoder = Thoth.Json.Decode.Auto.generateDecoder(resolver=resolverMsg.Value)
+        let wsref : WebSocket option ref = ref None
         let rec websocket timeout server =
             match !wsref with
             |Some _ -> ()
             |None ->
-                let socket = Fable.Import.Browser.WebSocket.Create server
+                let socket = WebSocket.Create server
                 wsref := Some socket
                 socket.onclose <- fun _ ->
                     wsref := None
                     this.whenDown |> Option.iter dispatch
-                    Fable.Import.Browser.window.setTimeout
+                    Dom.window.setTimeout
                         ((fun () -> websocket timeout server), timeout, ()) |> ignore
                 socket.onmessage <- fun e ->
-                         e.data
-                         |> string
-                         |> Decode.fromString msgDecoder
+                         Json.tryParseAs(string e.data, resolverMsg.Value)
                          |> function
                             | Ok msg -> msg |> this.mapping |> dispatch
                             | _ -> ()
@@ -94,7 +92,7 @@ type Bridge private() =
         |> Map.tryFind None
         |> Option.iter
                (fun s ->
-                    s (Thoth.Json.Encode.Auto.toString(0,(sentType.FullName.Replace('+','.'), server))))
+                    s (SimpleJson.stringify(sentType.FullName.Replace('+','.'), server)))
 
     /// Send the message to the server using a named bridge
     static member NamedSend(name:string, server : 'Server, [<Inject>] ?resolver: ITypeResolver<'Server>) =
@@ -103,7 +101,7 @@ type Bridge private() =
         |> Map.tryFind (Some name)
         |> Option.iter
                (fun s ->
-               s (Thoth.Json.Encode.Auto.toString(0,(sentType.FullName.Replace('+','.'), server))))
+               s (SimpleJson.stringify(sentType.FullName.Replace('+','.'), server)))
 
 [<RequireQualifiedAccess>]
 module Bridge =

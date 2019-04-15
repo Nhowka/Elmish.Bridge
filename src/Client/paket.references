@@ -1,3 +1,6 @@
 group Shared
     Fable.Elmish
-    Thoth.Json
+    Fable.Browser.Dom
+    Fable.Browser.Url
+    Fable.Browser.WebSocket
+    Fable.SimpleJson

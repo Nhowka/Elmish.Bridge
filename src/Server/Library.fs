@@ -1,6 +1,8 @@
 namespace Elmish.Bridge
 
 open Elmish
+open Newtonsoft.Json
+open Fable.Remoting.Json
 
 type internal ServerHubData<'model, 'server, 'client> =
     { Model : 'model
@@ -185,6 +187,7 @@ type ServerHub<'model, 'server, 'client>() =
         |> Option.map (fun sh -> sh.Init())
         |> Option.defaultValue ServerHubInstance.Empty
 
+open FSharp.Reflection
 /// Defines server configuration
 type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init, update) =
     let mutable subscribe = fun _ -> Cmd.none
@@ -193,15 +196,47 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     let mutable logSMsg = ignore
     let mutable logInit = ignore
     let mutable logModel = ignore
-    static let c = Thoth.Json.Net.Converters.converters
+    static let c = [|FableJsonConverter() :> JsonConverter|]
 
     static let s =
         let js = Newtonsoft.Json.JsonSerializer()
-        for c in Thoth.Json.Net.Converters.converters do
-            js.Converters.Add c
+        js.Converters.Add (FableJsonConverter())
         js
 
-    let mutable mappings = Map.empty
+    static let rec unroll (t:System.Type) =
+        seq {
+            if FSharpType.IsUnion t then
+                yield!
+                    FSharpType.GetUnionCases t
+                    |> Seq.collect (fun x ->
+                        match x.GetFields() with 
+                        |[|t1|] ->
+                            seq {
+                                yield t1.PropertyType.FullName.Replace('+','.'), t1.PropertyType, fun j -> FSharpValue.MakeUnion(x,[|j|])
+                                yield! unroll t1.PropertyType |> Seq.map (fun (a,t,b) -> a, t, fun j -> FSharpValue.MakeUnion(x, [|b j|]))
+                                }
+                        |_ -> Seq.empty)
+        }
+
+
+    let mutable mappings =
+        let t = typeof<'server>
+        if FSharpType.IsUnion t then
+            unroll t
+                |> Seq.groupBy (fun (a,_,_)->a)
+                |> Seq.collect
+                    (fun (_, f) ->
+                        match f |> Seq.tryItem 1 with
+                        |None -> f |> Seq.map (fun (a,t,f) -> a, (t,f))
+                        |Some _ -> Seq.empty)
+                    
+                |> Map.ofSeq
+                |> Map.add (t.FullName.Replace('+','.')) (t,id)
+                |> Map.map (fun _ (t,f) -> 
+                    fun (o : Newtonsoft.Json.Linq.JToken) -> o.ToObject(t, s) |> f :?> 'server)
+
+        else
+            Map.empty
 
 
     let write (o : 'client) = Newtonsoft.Json.JsonConvert.SerializeObject(o, c)
@@ -298,7 +333,6 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
     member this.Start server (arg : 'arg) : 'impl =
-        this.Register(id) |> ignore
         let inbox action =
             let mb =
               MailboxProcessor.Start(fun (mb : MailboxProcessor<'server option>) ->

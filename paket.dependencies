@@ -2,25 +2,28 @@ group Shared
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget FSharp.Core
-  nuget Fable.Elmish
-  nuget Fable.Core
-  nuget Thoth.Json
+  nuget FSharp.Core prerelease
+  nuget Fable.Elmish prerelease
+  nuget Fable.Core prerelease
+  nuget Fable.Browser.Dom prerelease
+  nuget Fable.Browser.Url prerelease
+  nuget Fable.Browser.WebSocket prerelease
+  nuget Fable.SimpleJson prerelease
 
 group Fabulous
   storage: none
   source https://api.nuget.org/v3/index.json
 
   nuget Fabulous.Core
-  nuget Thoth.Json.Net
+  nuget Fable.Remoting.Json
   nuget System.Net.WebSockets
 
 group Server
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget Thoth.Json.Net
-  nuget Elmish
+  nuget Fable.Remoting.Json
+  nuget Elmish prerelease
 
 group Suave
   storage: none
@@ -36,7 +39,17 @@ group Giraffe
   nuget Microsoft.AspNetCore.WebSockets
 
 group Build
-  source https://api.nuget.org/v3/index.json
-  generate_load_scripts: true
+    source https://api.nuget.org/v3/index.json
+    generate_load_scripts: true
 
-  nuget FAKE
+    clitool dotnet-fake
+    nuget NETStandard.Library.NETFramework
+    nuget Fake.DotNet.Cli
+    nuget Fake.DotNet.Paket
+    nuget Fake.Core.Target
+    nuget Fake.Core.Process
+    nuget Fake.Core.String
+    nuget Fake.Core.ReleaseNotes
+    nuget Fake.IO.FileSystem
+    nuget Fake.Tools.Git
+    nuget Fake.JavaScript.Yarn

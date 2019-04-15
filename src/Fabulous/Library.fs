@@ -4,7 +4,8 @@ open System
 open System.Net.WebSockets
 open System.Threading
 open Fabulous.Core
-open Thoth.Json.Net
+open Fable.Remoting.Json
+open Newtonsoft.Json
 
 type BridgeConfig<'Msg,'ElmishMsg> =
     { path : string
@@ -16,6 +17,13 @@ type BridgeConfig<'Msg,'ElmishMsg> =
 [<RequireQualifiedAccess>]
 module Bridge =
     let mutable private mappings : Map<string option, string -> unit> = Map.empty
+    let private fableConverter = FableJsonConverter() :> JsonConverter
+    let private fableSeriazizer = 
+        let serializer = JsonSerializer() 
+        serializer.Converters.Add fableConverter
+        serializer  
+    let private serialize result = JsonConvert.SerializeObject(result, [| fableConverter |])
+    let private settings = JsonSerializerSettings(DateParseHandling = DateParseHandling.None)
     /// Create a new `BridgeConfig` with the set endpoint
     let endpoint endpoint =
         {
@@ -56,16 +64,15 @@ module Bridge =
     let Send (server : 'Server) =
         mappings
         |> Map.tryFind None
-        |> Option.iter(fun o -> Thoth.Json.Net.Encode.Auto.toString (0,(typeof<'Server>.FullName.Replace('+','.'), server)) |> o )
+        |> Option.iter(fun o -> serialize(typeof<'Server>.FullName.Replace('+','.'), server) |> o )
 
     let NamedSend (name:string, server : 'Server) =
         mappings
         |> Map.tryFind (Some name)
-        |> Option.iter(fun o -> Thoth.Json.Net.Encode.Auto.toString (0,(typeof<'Server>.FullName.Replace('+','.'), server)) |> o )
+        |> Option.iter(fun o -> serialize(typeof<'Server>.FullName.Replace('+','.'), server) |> o )
 
     let internal Attach (config:BridgeConfig<'Msg,'ElmishMsg>) (program : Program<_, 'ElmishMsg, _>) =
         let sub _ =
-          let decoder : Decode.Decoder<'Msg> = Decode.Auto.generateDecoder false
           let dispatcher dispatch =
             let ws : ClientWebSocket option ref = ref None
             let rec websocket server r =
@@ -109,9 +116,14 @@ module Bridge =
                             let data = data::buffer
                             if complete then
                                 let data = data |> List.rev |> Array.concat
-                                let str = System.Text.Encoding.UTF8.GetString data
-                                let msg = Decode.fromString decoder str
-                                match msg with
+                                let inputJson = System.Text.Encoding.UTF8.GetString data
+                                let parsedJson = 
+                                    try 
+                                        JsonConvert.DeserializeObject<'Msg>(inputJson, settings) |> Ok
+                                    with
+                                    | ex ->
+                                        Error ex.Message
+                                match parsedJson with
                                 | Ok msg -> msg |> config.mapping |> dispatch
                                 | Error er -> eprintfn "%s" er
                                 return! receiver []
