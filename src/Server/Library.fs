@@ -187,6 +187,11 @@ type ServerHub<'model, 'server, 'client>() =
         |> Option.map (fun sh -> sh.Init())
         |> Option.defaultValue ServerHubInstance.Empty
 
+type BridgeDeserializer<'server> =
+    | Text of (string -> 'server)
+    | Binary of (byte[] -> 'server)
+
+
 open FSharp.Reflection
 /// Defines server configuration
 type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init, update) =
@@ -233,7 +238,10 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
                 |> Map.ofSeq
                 |> Map.add (t.FullName.Replace('+','.')) (t,id)
                 |> Map.map (fun _ (t,f) -> 
-                    fun (o : Newtonsoft.Json.Linq.JToken) -> o.ToObject(t, s) |> f :?> 'server)
+                    Text(
+                      fun (i : string) ->
+                        Newtonsoft.Json.JsonConvert.DeserializeObject(i,t,c)
+                        |> f :?> 'server))
 
         else
             Map.empty
@@ -242,13 +250,15 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     let write (o : 'client) = Newtonsoft.Json.JsonConvert.SerializeObject(o, c)
     let read dispatch str =
         logSMsg str
-        let (name : string, o : Newtonsoft.Json.Linq.JToken) =
-
+        let (name : string, o : string) =
             Newtonsoft.Json.JsonConvert.DeserializeObject
-                (str, typeof<string * Newtonsoft.Json.Linq.JToken>, c) :?> _
+                (str, typeof<string * string>, c) :?> _
         mappings
         |> Map.tryFind name
-        |> Option.iter (fun e -> e o |> dispatch)
+        |> Option.iter (function
+            | Text e -> e o 
+            | Binary e -> e (System.Convert.FromBase64String o)
+            >> dispatch)
 
 
     let mutable whenDown : 'server option = None
@@ -271,9 +281,19 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
         logRegister name
         mappings <- mappings
                     |> Map.add name
-                           (fun (o : Newtonsoft.Json.Linq.JToken) ->
-                           o.ToObject(t, s) :?> 'Inner |> map)
+                           (Text
+                             (fun (i : string) ->
+                              Newtonsoft.Json.JsonConvert.DeserializeObject<'Inner>(i,c) |> map))
         this
+    /// Register the server mappings so inner messages can be transformed to the top-level `update` message using a custom deserializer
+    member this.RegisterWithDeserializer<'Inner, 'server>(map : 'Inner -> 'server, deserializer ) =
+        let t = typeof<'Inner>
+        let name = t.FullName.Replace('+','.')
+        logRegister name
+        mappings <- mappings
+                    |> Map.add name 
+                        (match deserializer with Text e -> Text (e >> map) | Binary e -> Binary (e >> map))
+        this    
     /// Subscribe to external source of events.
     /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
     member this.WithSubscription sub =
@@ -400,6 +420,10 @@ module Bridge =
     /// Register the server mappings so inner messages can be transformed to the top-level `update` message
     let register map (program : BridgeServer<_, _, _, _, _>) =
         program.Register map
+
+    /// Register the server mappings so inner messages can be transformed to the top-level `update` message 
+    let registerWithDeserializer map des (program : BridgeServer<_, _, _, _, _>) =
+        program.RegisterWithDeserializer(map, des)
 
     /// Registers the `ServerHub` that will be used by this socket connections
     let withServerHub hub (program : BridgeServer<_, _, _, _, _>) =

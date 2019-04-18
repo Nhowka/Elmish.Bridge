@@ -6,6 +6,11 @@ open Elmish
 open Fable.Core
 open Fable.SimpleJson
 
+//Configures the transport of the custom serializer
+type SerializerResult =
+    | Text of string
+    | Binary of byte []
+
 [<RequireQualifiedAccess>]
 module internal Helpers =
     let getBaseUrl() =
@@ -16,7 +21,7 @@ module internal Helpers =
         url.hash <- ""
         url
 
-    let mutable internal mappings : Map<string option, string -> unit> = Map.empty
+    let mutable internal mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> unit)> = Map.empty
 
 /// Configures the mode about how the endpoint is used
 type UrlMode =
@@ -31,13 +36,31 @@ type BridgeConfig<'Msg,'ElmishMsg> =
     { path : string
       whenDown : 'ElmishMsg option
       mapping :  'Msg -> 'ElmishMsg
+      customSerializers: Map<string, obj -> SerializerResult>
       retryTime : int
       name : string option
       urlMode : UrlMode}
 
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-    member this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>, [<Inject>] ?resolverMsg: ITypeResolver<'Msg>, [<Inject>] ?resolverElmishMsg: ITypeResolver<'ElmishMsg> ) =
+    member this.AddSerializer(serializer: 'a -> SerializerResult, [<Inject>] ?resolver: ITypeResolver<'a>) =
+        let typeOrigin = resolver.Value.ResolveType()
+        let typeOriginName = typeOrigin.FullName.Replace("+",".")
+        {
+            whenDown = this.whenDown
+            path = this.path
+            mapping = this.mapping
+            customSerializers =
+                this.customSerializers
+                |> Map.add typeOriginName (fun e -> serializer (e :?> 'a))
+            retryTime = this.retryTime
+            name = this.name
+            urlMode = this.urlMode
+        }
+
+    /// Internal use only
+    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
+    member this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>, [<Inject>] ?resolverMsg: ITypeResolver<'Msg>) =
      let subs _ =
        [fun dispatch ->
         let url =
@@ -78,31 +101,42 @@ type BridgeConfig<'Msg,'ElmishMsg> =
         Helpers.mappings <-
             Helpers.mappings
             |> Map.add this.name
-                (fun e ->
+                (this.customSerializers,
+                 (fun e ->
                     match !wsref with
                     | Some socket -> socket.send e
-                    | None -> ())]
+                    | None -> ()))]
      program |> Program.withSubscription subs
 
+
+
 type Bridge private() =
+    static member private Sender(server : 'Server, bridgeName, sentType: System.Type) =
+        
+
+        let sentTypeName = sentType.FullName.Replace('+','.')
+        Helpers.mappings
+        |> Map.tryFind bridgeName
+        |> Option.iter
+               (fun (m,s) ->
+                    let serializer =
+                        m
+                        |> Map.tryFind sentTypeName
+                        |> Option.defaultValue
+                            (SimpleJson.stringify >> Text)
+                    let serialized =
+                        match serializer server with
+                        | Text e -> e
+                        | Binary b -> System.Convert.ToBase64String b
+                    s (SimpleJson.stringify(sentTypeName, serialized)))
     /// Send the message to the server
     static member Send(server : 'Server, [<Inject>] ?resolver: ITypeResolver<'Server>) =
-        let sentType = resolver.Value.ResolveType()
-        Helpers.mappings
-        |> Map.tryFind None
-        |> Option.iter
-               (fun s ->
-                    s (SimpleJson.stringify(sentType.FullName.Replace('+','.'), server)))
+        Bridge.Sender(server, None, resolver.Value.ResolveType())
 
     /// Send the message to the server using a named bridge
     static member NamedSend(name:string, server : 'Server, [<Inject>] ?resolver: ITypeResolver<'Server>) =
-        let sentType = resolver.Value.ResolveType()
-        Helpers.mappings
-        |> Map.tryFind (Some name)
-        |> Option.iter
-               (fun s ->
-               s (SimpleJson.stringify(sentType.FullName.Replace('+','.'), server)))
-
+        Bridge.Sender(server, Some name, resolver.Value.ResolveType())
+        
 [<RequireQualifiedAccess>]
 module Bridge =
 
@@ -112,6 +146,7 @@ module Bridge =
             path = endpoint
             whenDown = None
             mapping = id
+            customSerializers = Map.empty
             retryTime = 1
             name = None
             urlMode = Replace
@@ -133,6 +168,10 @@ module Bridge =
     let withName name this =
         { this with name = Some name }
 
+    /// Register a custom serializer
+    let inline withCustomSerializer (serializer: 'a -> SerializerResult) (this:BridgeConfig<'Msg,'ElmishMsg>) =
+        this.AddSerializer serializer
+
     /// Configure how many seconds before reconnecting when the connection is lost.
     /// Values below 1 are ignored
     let withRetryTime sec this =
@@ -148,6 +187,7 @@ module Bridge =
             whenDown = this.whenDown
             path = this.path
             mapping = map
+            customSerializers = this.customSerializers
             retryTime = this.retryTime
             name = this.name
             urlMode = this.urlMode
@@ -159,12 +199,7 @@ module Program =
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridge endpoint (program : Program<_, _, _, _>) =
-        { path = endpoint
-          whenDown = None
-          mapping = id
-          retryTime = 1
-          name = None
-          urlMode = Replace}.Attach program
+        Bridge.endpoint(endpoint).Attach program
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.

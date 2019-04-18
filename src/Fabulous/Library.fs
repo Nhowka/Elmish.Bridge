@@ -7,16 +7,22 @@ open Fabulous.Core
 open Fable.Remoting.Json
 open Newtonsoft.Json
 
+//Configures the transport of the custom serializer
+type SerializerResult =
+    | Text of string
+    | Binary of byte []
+
 type BridgeConfig<'Msg,'ElmishMsg> =
     { path : string
       whenDown : 'ElmishMsg option
       mapping :  'Msg -> 'ElmishMsg
+      customSerializers: Map<string, obj -> SerializerResult>
       retryTime : int
       name : string option}
 
 [<RequireQualifiedAccess>]
 module Bridge =
-    let mutable private mappings : Map<string option, string -> unit> = Map.empty
+    let mutable private mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> unit)> = Map.empty
     let private fableConverter = FableJsonConverter() :> JsonConverter
     let private fableSeriazizer = 
         let serializer = JsonSerializer() 
@@ -30,6 +36,7 @@ module Bridge =
             path = endpoint
             whenDown = None
             mapping = id
+            customSerializers = Map.empty
             retryTime = 1
             name = None
         }
@@ -57,21 +64,49 @@ module Bridge =
             whenDown = this.whenDown
             path = this.path
             mapping = map
+            customSerializers = this.customSerializers
             retryTime = this.retryTime
             name = this.name
         }
 
-    let Send (server : 'Server) =
-        mappings
-        |> Map.tryFind None
-        |> Option.iter(fun o -> serialize(typeof<'Server>.FullName.Replace('+','.'), server) |> o )
+    /// Register a custom serializer
+    let withCustomSerializer (serializer: 'a -> SerializerResult) (this:BridgeConfig<'Msg,'ElmishMsg>) =
+        {
+            whenDown = this.whenDown
+            path = this.path
+            mapping = this.mapping
+            customSerializers =
+                this.customSerializers
+                |> Map.add (typeof<'a>.FullName.Replace("+",".")) (fun e -> serializer (e :?> 'a))
+            retryTime = this.retryTime
+            name = this.name
+        } 
+        
 
-    let NamedSend (name:string, server : 'Server) =
+    
+    let internal sender(server: 'Server, name: string option) =
+        let sentTypeName =
+            typeof<'Server>.FullName.Replace('+','.')
+        
         mappings
-        |> Map.tryFind (Some name)
-        |> Option.iter(fun o -> serialize(typeof<'Server>.FullName.Replace('+','.'), server) |> o )
+        |> Map.tryFind name
+        |> Option.iter(fun (m,o) -> 
+            let serializer =
+                m
+                |> Map.tryFind sentTypeName
+                |> Option.defaultValue
+                    (serialize >> Text)
+            let serialized =
+                match serializer server with
+                | Text e -> e
+                | Binary b -> System.Convert.ToBase64String b        
+            serialize(sentTypeName, serialized) |> o )
 
-    let internal Attach (config:BridgeConfig<'Msg,'ElmishMsg>) (program : Program<_, 'ElmishMsg, _>) =
+    let Send (server : 'Server) = sender(server, None)
+
+    let NamedSend (name:string, server : 'Server) = sender(server, Some name)
+
+    let internal attach (config:BridgeConfig<'Msg,'ElmishMsg>) (program : Program<_, 'ElmishMsg, _>) =
         let sub _ =
           let dispatcher dispatch =
             let ws : ClientWebSocket option ref = ref None
@@ -162,7 +197,7 @@ module Bridge =
                       return! loop() }
                 loop ()
                 )
-            mappings <- mappings |> Map.add config.name sender.Post
+            mappings <- mappings |> Map.add config.name (config.customSerializers,sender.Post)
           [dispatcher]
         Program.withSubscription sub program
 
@@ -173,14 +208,9 @@ module Program =
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let withBridge endpoint (program : Program<_, _, _>) =
-        Bridge.Attach
-            { path = endpoint
-              whenDown = None
-              mapping = id
-              retryTime = 1
-              name = None} program
+        Bridge.attach (Bridge.endpoint endpoint) program
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _>) =
-        Bridge.Attach config program
+        Bridge.attach config program
