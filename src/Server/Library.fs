@@ -4,6 +4,23 @@ open Elmish
 open Newtonsoft.Json
 open Fable.Remoting.Json
 
+module internal Helpers =
+    open FSharp.Reflection
+    let rec unroll (t:System.Type) =
+        seq {
+            if FSharpType.IsUnion t then
+                yield!
+                    FSharpType.GetUnionCases t
+                    |> Seq.collect (fun x ->
+                        match x.GetFields() with
+                        |[|t1|] ->
+                            seq {
+                                yield t1.PropertyType.FullName, t1.PropertyType, fun j -> FSharpValue.MakeUnion(x,[|j|])
+                                yield! unroll t1.PropertyType |> Seq.map (fun (a,t,b) -> a, t, fun j -> FSharpValue.MakeUnion(x, [|b j|]))
+                                }
+                        |_ -> Seq.empty)
+        }
+
 type internal ServerHubData<'model, 'server, 'client> =
     { Model : 'model
       ServerDispatch : Dispatch<'server>
@@ -32,11 +49,23 @@ type internal ServerHubMessages<'model, 'server, 'client> =
 /// Holds the data of all connected clients
 type ServerHub<'model, 'server, 'client>() =
     let mutable clientMappings =
-        Map.empty
-        |> Map.add typeof<'client>.FullName (fun (o : obj) -> o :?> 'client)
+        let t = typeof<'client>
+        if Reflection.FSharpType.IsUnion t then
+            Helpers.unroll t
+            |> Seq.map (fun (name, _, f) -> name, (fun (o : obj) -> f o :?> 'client))
+            |> Map.ofSeq
+        else
+            Map.empty
+        |> Map.add t.FullName (fun (o : obj) -> o :?> 'client)
     let mutable serverMappings =
-        Map.empty
-        |> Map.add typeof<'server>.FullName (fun (o : obj) -> o :?> 'server)
+        let t = typeof<'server>
+        if Reflection.FSharpType.IsUnion t then
+            Helpers.unroll t
+            |> Seq.map (fun (name, _, f) -> name, (fun (o : obj) -> f o :?> 'server))
+            |> Map.ofSeq
+        else
+            Map.empty
+        |> Map.add t.FullName (fun (o : obj) -> o :?> 'server)
 
     let mb =
         MailboxProcessor.Start(fun inbox ->
@@ -192,7 +221,7 @@ type BridgeDeserializer<'server> =
     | Binary of (byte[] -> 'server)
 
 
-open FSharp.Reflection
+
 /// Defines server configuration
 type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init, update) =
     let mutable subscribe = fun _ -> Cmd.none
@@ -208,36 +237,21 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
         js.Converters.Add (FableJsonConverter())
         js
 
-    static let rec unroll (t:System.Type) =
-        seq {
-            if FSharpType.IsUnion t then
-                yield!
-                    FSharpType.GetUnionCases t
-                    |> Seq.collect (fun x ->
-                        match x.GetFields() with 
-                        |[|t1|] ->
-                            seq {
-                                yield t1.PropertyType.FullName.Replace('+','.'), t1.PropertyType, fun j -> FSharpValue.MakeUnion(x,[|j|])
-                                yield! unroll t1.PropertyType |> Seq.map (fun (a,t,b) -> a, t, fun j -> FSharpValue.MakeUnion(x, [|b j|]))
-                                }
-                        |_ -> Seq.empty)
-        }
-
-
     let mutable mappings =
         let t = typeof<'server>
-        if FSharpType.IsUnion t then
-            unroll t
+        if Reflection.FSharpType.IsUnion t then
+            Helpers.unroll t
+                |> Seq.map (fun (n,t,f) -> n.Replace('+','.'),t,f)
                 |> Seq.groupBy (fun (a,_,_)->a)
                 |> Seq.collect
                     (fun (_, f) ->
                         match f |> Seq.tryItem 1 with
                         |None -> f |> Seq.map (fun (a,t,f) -> a, (t,f))
                         |Some _ -> Seq.empty)
-                    
+
                 |> Map.ofSeq
                 |> Map.add (t.FullName.Replace('+','.')) (t,id)
-                |> Map.map (fun _ (t,f) -> 
+                |> Map.map (fun _ (t,f) ->
                     Text(
                       fun (i : string) ->
                         Newtonsoft.Json.JsonConvert.DeserializeObject(i,t,c)
@@ -256,7 +270,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
         mappings
         |> Map.tryFind name
         |> Option.iter (function
-            | Text e -> e o 
+            | Text e -> e o
             | Binary e -> e (System.Convert.FromBase64String o)
             >> dispatch)
 
@@ -291,9 +305,9 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
         let name = t.FullName.Replace('+','.')
         logRegister name
         mappings <- mappings
-                    |> Map.add name 
+                    |> Map.add name
                         (match deserializer with Text e -> Text (e >> map) | Binary e -> Binary (e >> map))
-        this    
+        this
     /// Subscribe to external source of events.
     /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
     member this.WithSubscription sub =
@@ -421,7 +435,7 @@ module Bridge =
     let register map (program : BridgeServer<_, _, _, _, _>) =
         program.Register map
 
-    /// Register the server mappings so inner messages can be transformed to the top-level `update` message 
+    /// Register the server mappings so inner messages can be transformed to the top-level `update` message
     let registerWithDeserializer map des (program : BridgeServer<_, _, _, _, _>) =
         program.RegisterWithDeserializer(map, des)
 
