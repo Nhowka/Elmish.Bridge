@@ -2,13 +2,13 @@ group Shared
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget FSharp.Core prerelease
-  nuget Fable.Elmish prerelease
-  nuget Fable.Core prerelease
-  nuget Fable.Browser.Dom prerelease
-  nuget Fable.Browser.Url prerelease
-  nuget Fable.Browser.WebSocket prerelease
-  nuget Fable.SimpleJson prerelease
+  nuget FSharp.Core
+  nuget Fable.Elmish
+  nuget Fable.Core
+  nuget Fable.Browser.Dom
+  nuget Fable.Browser.Url
+  nuget Fable.Browser.WebSocket
+  nuget Fable.SimpleJson
 
 group Fabulous
   storage: none
@@ -23,7 +23,7 @@ group Server
   source https://api.nuget.org/v3/index.json
 
   nuget Fable.Remoting.Json
-  nuget Elmish prerelease
+  nuget Elmish
 
 group Suave
   storage: none

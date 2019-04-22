@@ -1,4 +1,4 @@
-#### 3.00-pre2
+#### 3.0.0
 * Compatible with Fable.Core 3 and Elmish 3
 * Replaced Thoth.Json with Fable.SimpleJson
 * Support for customizing the message the client sends and the server receives
