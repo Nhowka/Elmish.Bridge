@@ -18,6 +18,14 @@ group Fabulous
   nuget Fable.Remoting.Json
   nuget System.Net.WebSockets
 
+group DotnetClient
+  storage: none
+  source https://api.nuget.org/v3/index.json
+
+  nuget Elmish
+  nuget Fable.Remoting.Json
+  nuget System.Net.WebSockets
+
 group Server
   storage: none
   source https://api.nuget.org/v3/index.json

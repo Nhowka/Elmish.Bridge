@@ -1,8 +1,8 @@
-#### 3.0.1
+#### 3.0.2
 * Compatible with Fable.Core 3 and Elmish 3
 * Replaced Thoth.Json with Fable.SimpleJson
 * Support for customizing the message the client sends and the server receives
-* Detects non-ambiguous union cases and register them at the server
+* Detects non-ambiguous union cases and register them at the server, including tuples
 
 #### 2.0.0
 * Compatible with Fable 2

@@ -13,12 +13,15 @@ module internal Helpers =
                     FSharpType.GetUnionCases t
                     |> Seq.collect (fun x ->
                         match x.GetFields() with
+                        |[||] -> Seq.empty
                         |[|t1|] ->
                             seq {
                                 yield t1.PropertyType.FullName, t1.PropertyType, fun j -> FSharpValue.MakeUnion(x,[|j|])
                                 yield! unroll t1.PropertyType |> Seq.map (fun (a,t,b) -> a, t, fun j -> FSharpValue.MakeUnion(x, [|b j|]))
                                 }
-                        |_ -> Seq.empty)
+                        |tuple ->
+                            let t = tuple |> Array.map (fun t -> t.PropertyType) |> FSharpType.MakeTupleType
+                            Seq.singleton (t.FullName.Replace('+','.'), t, fun j -> FSharpValue.MakeUnion(x, j |> FSharpValue.GetTupleFields)))
         }
 
 type internal ServerHubData<'model, 'server, 'client> =
@@ -136,7 +139,6 @@ type ServerHub<'model, 'server, 'client>() =
         clientMappings <- clientMappings
                           |> Map.add typeof<'Inner>.FullName
                                  (fun (o : obj) -> o :?> 'Inner |> map)
-
         this
 
 
@@ -145,7 +147,6 @@ type ServerHub<'model, 'server, 'client>() =
         serverMappings <- serverMappings
                           |> Map.add typeof<'Inner>.FullName
                                  (fun (o : obj) -> o :?> 'Inner |> map)
-
         this
 
     abstract BroadcastClient : 'inner -> unit
