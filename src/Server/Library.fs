@@ -312,8 +312,9 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint : string, init
     /// Subscribe to external source of events.
     /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
     member this.WithSubscription sub =
+        let oldSubscribe = subscribe
         let sub model =
-            Cmd.batch [ subscribe model
+            Cmd.batch [ oldSubscribe model
                         sub model ]
         subscribe <- sub
         this
