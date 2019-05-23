@@ -1,4 +1,6 @@
-
+#### 3.1.0
+* Support callbacks to be called when the websocket is broken
+* Cmd-like functions for easier usage
 
 #### 3.0.3
 * Compatible with Fable.Core 3 and Elmish 3

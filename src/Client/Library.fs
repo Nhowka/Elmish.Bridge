@@ -21,7 +21,7 @@ module internal Helpers =
         url.hash <- ""
         url
 
-    let mutable internal mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> unit)> = Map.empty
+    let mutable internal mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> (unit -> unit) -> unit)> = Map.empty
 
 /// Configures the mode about how the endpoint is used
 type UrlMode =
@@ -102,17 +102,15 @@ type BridgeConfig<'Msg,'ElmishMsg> =
             Helpers.mappings
             |> Map.add this.name
                 (this.customSerializers,
-                 (fun e ->
+                 (fun e callback ->
                     match !wsref with
                     | Some socket -> socket.send e
-                    | None -> ()))]
+                    | None -> callback ()))]
      program |> Program.withSubscription subs
 
-
-
 type Bridge private() =
-    static member private Sender(server : 'Server, bridgeName, sentType: System.Type) =
-        
+    static member private Sender(server : 'Server, bridgeName, callback, sentType: System.Type) =
+
 
         let sentTypeName = sentType.FullName.Replace('+','.')
         Helpers.mappings
@@ -128,15 +126,15 @@ type Bridge private() =
                         match serializer server with
                         | Text e -> e
                         | Binary b -> System.Convert.ToBase64String b
-                    s (SimpleJson.stringify(sentTypeName, serialized)))
+                    s (SimpleJson.stringify(sentTypeName, serialized)) callback)
     /// Send the message to the server
-    static member Send(server : 'Server, [<Inject>] ?resolver: ITypeResolver<'Server>) =
-        Bridge.Sender(server, None, resolver.Value.ResolveType())
+    static member Send(server : 'Server,?callback, [<Inject>] ?resolver: ITypeResolver<'Server>) =
+        Bridge.Sender(server, None, defaultArg callback ignore, resolver.Value.ResolveType())
 
     /// Send the message to the server using a named bridge
-    static member NamedSend(name:string, server : 'Server, [<Inject>] ?resolver: ITypeResolver<'Server>) =
-        Bridge.Sender(server, Some name, resolver.Value.ResolveType())
-        
+    static member NamedSend(name:string, server : 'Server,?callback, [<Inject>] ?resolver: ITypeResolver<'Server>) =
+        Bridge.Sender(server, Some name, defaultArg callback ignore, resolver.Value.ResolveType())
+
 [<RequireQualifiedAccess>]
 module Bridge =
 
@@ -205,3 +203,10 @@ module Program =
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
         config.Attach program
+
+[<RequireQualifiedAccess>]
+module Cmd =
+    /// Creates a `Cmd` from a server message.
+    let inline bridgeSend (msg:'server) : Cmd<'client> = [ fun _ -> Bridge.Send msg ]
+    /// Creates a `Cmd` from a server message. Dispatches the client message if the bridge is broken.
+    let inline bridgeSendOr (msg:'server) (fallback:'client) : Cmd<'client> = [ fun dispatch -> Bridge.Send(msg, fun () -> dispatch fallback) ]
