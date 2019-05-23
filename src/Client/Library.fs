@@ -210,3 +210,7 @@ module Cmd =
     let inline bridgeSend (msg:'server) : Cmd<'client> = [ fun _ -> Bridge.Send msg ]
     /// Creates a `Cmd` from a server message. Dispatches the client message if the bridge is broken.
     let inline bridgeSendOr (msg:'server) (fallback:'client) : Cmd<'client> = [ fun dispatch -> Bridge.Send(msg, fun () -> dispatch fallback) ]
+    /// Creates a `Cmd` from a server message using a named bridge.
+    let inline namedBridgeSend name (msg:'server) : Cmd<'client> = [ fun _ -> Bridge.NamedSend(name, msg) ]
+    /// Creates a `Cmd` from a server message using a named bridge. Dispatches the client message if the bridge is broken.
+    let inline namedBridgeSendOr name (msg:'server) (fallback:'client) : Cmd<'client> = [ fun dispatch -> Bridge.NamedSend(name, msg, fun () -> dispatch fallback) ]

@@ -63,6 +63,8 @@ Now you can use the MVU approach on the server, minus the V. That still is just 
 
 The server has a little more configuration to do, but that enables the client to be very simple to use while being compatible with the vanilla Elmish. A problem that exists is that the client can send any kind of message, not just the expected message that the `update` listens to. Because of that, you need register every type that you want to be listening and how to get to the original top-level message.
 
+**As of version 3.0, you won't need to register every mapping to the top-level type. The server will register every type in the union that has no ambiguity. For this example, you won't need to register them anymore as `FirstInnerMsg` is only mapped by `First` and `SecondInnerMsg` is only mapped by `Second`.**
+
 Imagine that you have the following model:
 
 ```fsharp
@@ -344,6 +346,64 @@ Program.mkProgram init update view
     |> Bridge.withMapping NotificationMessages)
 |> ...
 ```
+
+## Custom serialization (since 3.0)
+
+If you want to use a different serialization for sending a type for the server, you can register a custom serialization that takes the desired input and maps it into a `SerializerResult`:
+
+```fsharp
+/// SerializerResult is defined as:
+type SerializerResult =
+    | Text of string
+    | Binary of byte []
+
+/// You can serialize a simple type like
+type Action =
+    | Increment
+    | Decrement
+
+/// Using a serializer with the signature (Action -> SerializerResult) like
+
+let actionSerializer = function
+    | Increment -> Text "+"
+    | Decrement -> Text "-"
+
+/// And then register it on the BridgeConfig
+Program.mkProgram init update view
+|> Program.withBridgeConfig
+    (Bridge.endpoint "/socket/chat"
+    |> Bridge.withCustomSerializer actionSerializer)
+|> ...
+
+/// As for the server, you need to use the BridgeDeserializer
+type BridgeDeserializer<'server> =
+    | Text of (string -> 'server)
+    | Binary of (byte[] -> 'server)
+
+/// For Action, that would be
+let deserializer = Text (function "+" -> Increment | "-" -> Decrement)
+
+/// Suppose your top level message is defined as that
+type ServerMessage =
+    | TheAction of Action
+    | AnotherMessage
+
+/// Then you can use it after registering it
+Bridge.mkServer Shared.endpoint init update
+|> Bridge.registerWithDeserializer TheAction deserializer
+|> Bridge.run (...)
+```
+
+## Elmish Cmd (since 3.1.1)
+
+As an extension to the `Cmd` module, you can now use `Cmd.bridgeSend` and `Cmd.namedBridgeSend` to create a `Cmd` on your `update` and `init` functions. That is more alike other libraries that extends Elmish.
+
+```fsharp
+let init () =
+    None, Cmd.bridgeSend (GiveMeTheModel)
+```
+
+
 
 ## Anything more?
 
