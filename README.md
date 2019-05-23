@@ -231,6 +231,8 @@ Besides `Program.withBridge`, there is `Program.withBridgeConfig` that can confi
 
 - For defining a mapping so the server can send a different message to the client, chain the config with `Bridge.withMapping`. More on that on the next section.
 
+- (Since 3.0) For defining a custom serializer so you aren't limited on sending JSON data through the socket, pass a custom serializer returning `SerializerResult` to `withCustomSerializer`. More on that later.
+
 ## Minimizing shared messages
 
 You can share just a sub-set of the messages between client and server. The message type used by the first argument of `init` and `update` functions on the server is what will be sent, so on the client you can add a mapping from that type for the type used on the client's `init`/`update`.
@@ -403,6 +405,12 @@ let init () =
     None, Cmd.bridgeSend (GiveMeTheModel)
 ```
 
+By default, if you send a message while you are disconnected, nothing happens. If you want to dispatch a message to the loop in that case, you can instead use `Cmd.bridgeSendOr` or `Cmd.namedBridgeSendOr` to define a fallback message.
+
+```fsharp
+let init () =
+    None, Cmd.bridgeSendOr (WhatsTheAnswer) (ItIs 42)
+```
 
 
 ## Anything more?
