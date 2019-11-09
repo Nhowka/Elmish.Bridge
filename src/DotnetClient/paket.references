@@ -1,0 +1,4 @@
+group DotnetClient
+  Elmish
+  Fable.Remoting.Json
+  System.Net.WebSockets
