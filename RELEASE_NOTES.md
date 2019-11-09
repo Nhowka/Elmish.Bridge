@@ -1,3 +1,6 @@
+#### 3.2.1
+* Inlines more functions to keep generics working
+
 #### 3.2.0
 * Supports newer Fable.SimpleJson and fable-compiler
 

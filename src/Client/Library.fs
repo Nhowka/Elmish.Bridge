@@ -141,7 +141,7 @@ type Bridge private() =
 module Bridge =
 
     /// Create a new `BridgeConfig` with the set endpoint
-    let endpoint endpoint =
+    let inline endpoint endpoint =
         {
             path = endpoint
             whenDown = None
@@ -153,7 +153,7 @@ module Bridge =
         }
 
     /// Set a message to be sent when connection is lost.
-    let withWhenDown msg this =
+    let inline withWhenDown msg this =
         { this with whenDown = Some msg }
 
     /// Sets the mode of how the url is calculated
@@ -161,11 +161,11 @@ module Bridge =
     /// `Append` : adds the endpoint to the current path
     /// `Raw`: uses the given endpoint as a complete URL
     /// `Calculated` : takes a function that given the current URL and the endpoint, calculates the complete url to the socket
-    let withUrlMode mode this =
+    let inline withUrlMode mode this =
         { this with urlMode = mode }
 
     /// Set a name for this bridge if you want to have a secondary one.
-    let withName name this =
+    let inline withName name this =
         { this with name = Some name }
 
     /// Register a custom serializer
@@ -174,7 +174,7 @@ module Bridge =
 
     /// Configure how many seconds before reconnecting when the connection is lost.
     /// Values below 1 are ignored
-    let withRetryTime sec this =
+    let inline withRetryTime sec this =
         if sec < 1 then
             this
         else
@@ -182,7 +182,7 @@ module Bridge =
 
     /// Configure a mapping to the top-level message so the server can send an inner message
     /// That enables using just a subset of the messages on the shared project
-    let withMapping map this =
+    let inline withMapping map this =
         {
             whenDown = this.whenDown
             path = this.path
