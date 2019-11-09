@@ -8,7 +8,7 @@ group Shared
   nuget Fable.Browser.Dom
   nuget Fable.Browser.Url
   nuget Fable.Browser.WebSocket
-  nuget Fable.SimpleJson
+  nuget Fable.SimpleJson ~> 3.7
 
 group Fabulous
   storage: none

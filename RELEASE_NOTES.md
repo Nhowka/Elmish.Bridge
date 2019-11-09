@@ -1,3 +1,6 @@
+#### 3.2.0
+* Supports newer Fable.SimpleJson and fable-compiler
+
 #### 3.1.1
 * Support callbacks to be called when the websocket is broken
 * Cmd-like functions for easier usage

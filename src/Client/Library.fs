@@ -11,8 +11,10 @@ type SerializerResult =
     | Text of string
     | Binary of byte []
 
+//Internal use only
 [<RequireQualifiedAccess>]
-module internal Helpers =
+[<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
+module Helpers =
     let getBaseUrl() =
         let url =
             Dom.window.location.href
@@ -21,7 +23,7 @@ module internal Helpers =
         url.hash <- ""
         url
 
-    let mutable internal mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> (unit -> unit) -> unit)> = Map.empty
+    let mutable mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> (unit -> unit) -> unit)> = Map.empty
 
 /// Configures the mode about how the endpoint is used
 type UrlMode =
@@ -60,7 +62,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
 
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-    member this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>, [<Inject>] ?resolverMsg: ITypeResolver<'Msg>) =
+    member inline this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>) =
      let subs _ =
        [fun dispatch ->
         let url =
@@ -93,7 +95,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                     Dom.window.setTimeout
                         ((fun () -> websocket timeout server), timeout, ()) |> ignore
                 socket.onmessage <- fun e ->
-                         Json.tryParseAs(string e.data, resolverMsg.Value)
+                         Json.tryParseAs(string e.data)
                          |> function
                             | Ok msg -> msg |> this.mapping |> dispatch
                             | _ -> ()
