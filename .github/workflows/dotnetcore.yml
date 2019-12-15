@@ -14,4 +14,4 @@ jobs:
       with:
         dotnet-version: 3.1.100
     - name: Build with dotnet
-      run: dotnet pack -c Release ./src/Client/Elmish.Bridge.Client.fsproj
+      run: dotnet tool install paket -g && dotnet pack -c Release ./src/Client/Elmish.Bridge.Client.fsproj
