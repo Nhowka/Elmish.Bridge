@@ -95,7 +95,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                     Dom.window.setTimeout
                         ((fun () -> websocket timeout server), timeout, ()) |> ignore
                 socket.onmessage <- fun e ->
-                         Json.tryParseAs(string e.data)
+                         Json.tryParseNativeAs(string e.data)
                          |> function
                             | Ok msg -> msg |> this.mapping |> dispatch
                             | _ -> ()
