@@ -102,9 +102,8 @@ module Bridge =
 
     let NamedSend (name:string, server : 'Server) = sender(server, Some name)
 
-    let internal attach (config:BridgeConfig<'Msg,'ElmishMsg>) (program : Program<_,_, 'ElmishMsg, _>) =
-        let sub _ =
-          let dispatcher dispatch =
+    let internal attach (config:BridgeConfig<'Msg,'ElmishMsg>) =
+        let dispatcher dispatch =
             let ws : ClientWebSocket option ref = ref None
             let rec websocket server r =
                 lock ws (fun () ->
@@ -194,8 +193,13 @@ module Bridge =
                 loop ()
                 )
             mappings <- mappings |> Map.add config.name (config.customSerializers,sender.Post)
-          [dispatcher]
-        Program.withSubscription sub program
+        dispatcher
+
+    /// Creates a subscription to be used with `Cmd.OfSub`. That enables starting Bridge with
+    /// a  configuration after the `Program` has already started
+    let asSubscription (this:BridgeConfig<_,_>) : Sub<_> =
+        attach this
+
 
 [<RequireQualifiedAccess>]
 module Program =
@@ -203,9 +207,9 @@ module Program =
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let withBridge endpoint (program : Program<_, _, _, _>) =
-        Bridge.attach (Bridge.endpoint endpoint) program
+        program |> Program.withSubscription (fun _ -> [Bridge.attach (Bridge.endpoint endpoint)])
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
-        Bridge.attach config program
+        program |> Program.withSubscription (fun _ -> [Bridge.attach config])

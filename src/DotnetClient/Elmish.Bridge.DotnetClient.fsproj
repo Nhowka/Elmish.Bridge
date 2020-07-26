@@ -4,11 +4,11 @@
     <Description>Client part of Elmish.Bridge for .NET based apps</Description>
     <PackageProjectUrl>https://github.com/Nhowka/Elmish.Bridge</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Nhowka/Elmish.Bridge.git</RepositoryUrl>
-    <PackageLicenseUrl>https://github.com/Nhowka/Elmish.Bridge/blob/master/LICENSE</PackageLicenseUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIconUrl></PackageIconUrl>
     <PackageTags>fsharp;dotnet;elmish;remoting;rpc;webserver</PackageTags>
     <Authors>Diego Esmerio</Authors>
-    <Version>3.0.1</Version>
+    <Version>3.4.0</Version>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>

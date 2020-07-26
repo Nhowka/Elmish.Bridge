@@ -255,3 +255,8 @@ paket-files/
 TestResults.xml
 
 dist/
+.ionide/symbolCache.db
+src/.DS_Store
+src/Client/.DS_Store
+src/DotnetClient/.DS_Store
+.DS_Store

@@ -46,18 +46,3 @@ group Giraffe
   nuget Giraffe
   nuget Microsoft.AspNetCore.WebSockets
 
-group Build
-    source https://api.nuget.org/v3/index.json
-    generate_load_scripts: true
-
-    clitool dotnet-fake
-    nuget NETStandard.Library.NETFramework
-    nuget Fake.DotNet.Cli
-    nuget Fake.DotNet.Paket
-    nuget Fake.Core.Target
-    nuget Fake.Core.Process
-    nuget Fake.Core.String
-    nuget Fake.Core.ReleaseNotes
-    nuget Fake.IO.FileSystem
-    nuget Fake.Tools.Git
-    nuget Fake.JavaScript.Yarn

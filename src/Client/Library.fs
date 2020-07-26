@@ -62,9 +62,8 @@ type BridgeConfig<'Msg,'ElmishMsg> =
 
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-    member inline this.Attach(program : Elmish.Program<_, _, 'ElmishMsg, _>) =
-     let subs _ =
-       [fun dispatch ->
+    member inline this.Attach() =
+     let subs dispatch =
         let url =
             match this.urlMode with
             | Replace ->
@@ -107,8 +106,8 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                  (fun e callback ->
                     match !wsref with
                     | Some socket -> socket.send e
-                    | None -> callback ()))]
-     program |> Program.withSubscription subs
+                    | None -> callback ()))
+     subs
 
 type Bridge private() =
     static member private Sender(server : 'Server, bridgeName, callback, sentType: System.Type) =
@@ -193,18 +192,24 @@ module Bridge =
             urlMode = this.urlMode
         }
 
+    /// Creates a subscription to be used with `Cmd.OfSub`. That enables starting Bridge with
+    /// a configuration obtained after the `Program` has already started
+    let inline asSubscription (this:BridgeConfig<_,_>) =
+        this.Attach()
+
+
 [<RequireQualifiedAccess>]
 module Program =
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridge endpoint (program : Program<_, _, _, _>) =
-        Bridge.endpoint(endpoint).Attach program
+        program |> Program.withSubscription (fun _ -> [Bridge.endpoint(endpoint).Attach()])
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
-        config.Attach program
+       program |> Program.withSubscription (fun _ -> [config.Attach ()])
 
 [<RequireQualifiedAccess>]
 module Cmd =
