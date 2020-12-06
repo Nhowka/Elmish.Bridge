@@ -158,7 +158,7 @@ let webApp =
 
 let app =
   application {
-    router server
+    use_router webApp
     disable_diagnostics
     app_config Giraffe.useWebSockets
     url uri
@@ -286,7 +286,7 @@ Sometimes you may need that path to be relative with the current URL. Maybe you 
 - `Raw`: Uses the defined path as a complete URL.
 - `Calculated`: Takes an extra function `(string -> string -> string)`. The functions arguments are the current URL and the endpoint defined, returning the resulting URL.
 
-As Fabulous runs outside the browser the endpoint is assumed to be raw. Pay attention to the protocol and use `ws://` or `ws://` to connect.
+As Fabulous runs outside the browser the endpoint is assumed to be raw. Pay attention to the protocol and use `ws://` or `wss://` to connect.
 
 ## Webpack caveat
 
