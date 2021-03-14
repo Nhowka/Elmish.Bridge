@@ -25,7 +25,7 @@ module Bridge =
     let mutable private mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> unit)> = Map.empty
     let private fableConverter = FableJsonConverter() :> JsonConverter
     let private serialize result = JsonConvert.SerializeObject(result, [| fableConverter |])
-    let private settings = JsonSerializerSettings(DateParseHandling = DateParseHandling.None)
+    let private settings = JsonSerializerSettings(DateParseHandling = DateParseHandling.None, Converters = [| fableConverter |])
     /// Create a new `BridgeConfig` with the set endpoint
     let endpoint endpoint =
         {

@@ -1,3 +1,7 @@
+#### 5.0.0
+* Use net5.0
+* Use Elmish Program as base to the server loop
+
 #### 3.2.1
 * Inlines more functions to keep generics working
 
