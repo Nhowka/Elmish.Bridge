@@ -24,12 +24,12 @@ type BridgeConfig<'Msg,'ElmishMsg> =
 module Bridge =
     let mutable private mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> unit)> = Map.empty
     let private fableConverter = FableJsonConverter() :> JsonConverter
-    let private fableSeriazizer = 
-        let serializer = JsonSerializer() 
+    let private fableSeriazizer =
+        let serializer = JsonSerializer()
         serializer.Converters.Add fableConverter
-        serializer  
+        serializer
     let private serialize result = JsonConvert.SerializeObject(result, [| fableConverter |])
-    let private settings = JsonSerializerSettings(DateParseHandling = DateParseHandling.None)
+    let private settings = JsonSerializerSettings(DateParseHandling = DateParseHandling.None, Converters = [| fableConverter |])
     /// Create a new `BridgeConfig` with the set endpoint
     let endpoint endpoint =
         {
@@ -80,17 +80,17 @@ module Bridge =
                 |> Map.add (typeof<'a>.FullName.Replace("+",".")) (fun e -> serializer (e :?> 'a))
             retryTime = this.retryTime
             name = this.name
-        } 
-        
+        }
 
-    
+
+
     let internal sender(server: 'Server, name: string option) =
         let sentTypeName =
             typeof<'Server>.FullName.Replace('+','.')
-        
+
         mappings
         |> Map.tryFind name
-        |> Option.iter(fun (m,o) -> 
+        |> Option.iter(fun (m,o) ->
             let serializer =
                 m
                 |> Map.tryFind sentTypeName
@@ -99,7 +99,7 @@ module Bridge =
             let serialized =
                 match serializer server with
                 | Text e -> e
-                | Binary b -> System.Convert.ToBase64String b        
+                | Binary b -> System.Convert.ToBase64String b
             serialize(sentTypeName, serialized) |> o )
 
     let Send (server : 'Server) = sender(server, None)
@@ -124,7 +124,7 @@ module Bridge =
                                 (ws :> IDisposable).Dispose()
                                 r := None
                                 config.whenDown |> Option.iter dispatch}
-                        |> Async.StartImmediate                        
+                        |> Async.StartImmediate
                     | Some _ -> ())
             websocket config.path ws
             let recBuffer = ArraySegment(Array.zeroCreate 4096)
@@ -152,8 +152,8 @@ module Bridge =
                             if complete then
                                 let data = data |> List.rev |> Array.concat
                                 let inputJson = System.Text.Encoding.UTF8.GetString data
-                                let parsedJson = 
-                                    try 
+                                let parsedJson =
+                                    try
                                         JsonConvert.DeserializeObject<'Msg>(inputJson, settings) |> Ok
                                     with
                                     | ex ->
@@ -184,7 +184,7 @@ module Bridge =
                 let rec loop () = async {
                     let! (msg : string) = mb.Receive()
                     match !ws with
-                    | Some ws when ws.State = WebSocketState.Open ->                      
+                    | Some ws when ws.State = WebSocketState.Open ->
                       let arr = msg |> System.Text.Encoding.UTF8.GetBytes |> ArraySegment
                       do! ws.SendAsync(arr,WebSocketMessageType.Text, true, CancellationToken.None)
                         |> Async.AwaitTask |> Async.Catch |> Async.Ignore
