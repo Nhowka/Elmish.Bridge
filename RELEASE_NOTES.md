@@ -1,6 +1,7 @@
-#### 5.0.0
+#### 5.0.0-rc-2
 * Use net5.0
 * Use Elmish Program as base to the server loop
+* Hack for HMR on Fable client
 
 #### 3.2.1
 * Inlines more functions to keep generics working

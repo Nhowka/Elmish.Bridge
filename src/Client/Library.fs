@@ -5,6 +5,7 @@ open Browser.Types
 open Elmish
 open Fable.Core
 open Fable.SimpleJson
+open Fable.Core.JsInterop
 
 //Configures the transport of the custom serializer
 type SerializerResult =
@@ -23,7 +24,13 @@ module Helpers =
         url.hash <- ""
         url
 
-    let mutable mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> (unit -> unit) -> unit)> = Map.empty
+    let mappings : Map<string option, Map<string, obj -> SerializerResult> * WebSocket option ref * (string -> (unit -> unit) -> unit)> option ref =
+        match Dom.window?Elmish_Bridge_Helpers with
+        | None ->
+            let cell = ref (Some Map.empty)
+            Dom.window?Elmish_Bridge_Helpers <- cell
+            cell
+        | Some m -> m
 
 /// Configures the mode about how the endpoint is used
 type UrlMode =
@@ -81,7 +88,12 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                 let url = Browser.Url.URL.Create this.path
                 url.protocol <- url.protocol.Replace("http", "ws")
                 url
-        let wsref : WebSocket option ref = ref None
+        let wsref : WebSocket option ref =
+            !Helpers.mappings
+            |> Option.defaultValue Map.empty
+            |> Map.tryFind this.name
+            |> Option.map (fun (_, socket, _) -> socket)
+            |> Option.defaultValue (ref None)
         let rec websocket timeout server =
             match !wsref with
             |Some _ -> ()
@@ -99,14 +111,17 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                             | Ok msg -> msg |> this.mapping |> dispatch
                             | _ -> ()
         websocket (this.retryTime * 1000) (url.href.TrimEnd '#')
-        Helpers.mappings <-
-            Helpers.mappings
+        Helpers.mappings :=
+            !Helpers.mappings
+            |> Option.defaultValue Map.empty
             |> Map.add this.name
                 (this.customSerializers,
+                 wsref,
                  (fun e callback ->
                     match !wsref with
                     | Some socket -> socket.send e
                     | None -> callback ()))
+            |> Some
      subs
 
 type Bridge private() =
@@ -114,10 +129,11 @@ type Bridge private() =
 
 
         let sentTypeName = sentType.FullName.Replace('+','.')
-        Helpers.mappings
+        !Helpers.mappings
+        |> Option.defaultValue Map.empty
         |> Map.tryFind bridgeName
         |> Option.iter
-               (fun (m,s) ->
+               (fun (m,_,s) ->
                     let serializer =
                         m
                         |> Map.tryFind sentTypeName
