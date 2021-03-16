@@ -7,7 +7,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>fsharp;fable;elmish;remoting;rpc;webserver</PackageTags>
     <Authors>Diego Esmerio</Authors>
-    <Version>5.0.0-rc-2</Version>
+    <Version>5.0.0-rc-3</Version>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TargetFramework>net5.0</TargetFramework>
   </PropertyGroup>
@@ -16,7 +16,7 @@
     <Compile Include="Library.fs" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="*.fsproj; *.fs" PackagePath="fable\" />
+    <Content Include="*.fsproj; *.fs" Exclude="**\*.fs.js" PackagePath="fable\" />
     <Content Include="paket.references" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />

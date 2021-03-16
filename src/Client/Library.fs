@@ -138,12 +138,12 @@ type Bridge private() =
                         m
                         |> Map.tryFind sentTypeName
                         |> Option.defaultValue
-                            (SimpleJson.stringify >> Text)
+                            (Json.serialize >> Text)
                     let serialized =
                         match serializer server with
                         | Text e -> e
                         | Binary b -> System.Convert.ToBase64String b
-                    s (SimpleJson.stringify(sentTypeName, serialized)) callback)
+                    s (Json.serialize(sentTypeName, serialized)) callback)
     /// Send the message to the server
     static member Send(server : 'Server,?callback, [<Inject>] ?resolver: ITypeResolver<'Server>) =
         Bridge.Sender(server, None, defaultArg callback ignore, resolver.Value.ResolveType())
