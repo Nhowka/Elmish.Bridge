@@ -141,7 +141,7 @@ type Bridge private() =
                         m
                         |> Map.tryFind sentTypeName
                         |> Option.defaultValue
-                            (Json.serialize >> Text)
+                            (fun o -> Convert.serialize o (createTypeInfo sentType) |> Text)
                     let serialized =
                         match serializer server with
                         | Text e -> e
