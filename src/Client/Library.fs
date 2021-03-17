@@ -156,9 +156,8 @@ type Bridge private() =
                     let stringType = createTypeInfo typeof<string>
                     s (Convert.serialize (sprintf "RPC|%O" guid, value) (TypeInfo.Tuple(fun () -> [|stringType;typeInfo|]))) ignore)
 
-    static member internal RPCSend(guid: System.Guid, value: 'a, ?name, [<Inject>] ?resolver: ITypeResolver<'a>) =
+    static member RPCSend(guid: System.Guid, value: 'a, ?name, [<Inject>] ?resolver: ITypeResolver<'a>) =
         Bridge.RPCSender(guid, name, value, resolver.Value.ResolveType())
-
 
     /// Send the message to the server
     static member Send(server : 'Server,?callback, [<Inject>] ?resolver: ITypeResolver<'Server>) =
