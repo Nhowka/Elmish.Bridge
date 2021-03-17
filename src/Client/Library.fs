@@ -125,6 +125,9 @@ type BridgeConfig<'Msg,'ElmishMsg> =
      subs
 
 type Bridge private() =
+
+    static member private stringTuple = (TypeInfo.Tuple(fun () -> [|TypeInfo.String;TypeInfo.String|]))
+
     static member private Sender(server : 'Server, bridgeName, callback, sentType: System.Type) =
 
 
@@ -143,7 +146,7 @@ type Bridge private() =
                         match serializer server with
                         | Text e -> e
                         | Binary b -> System.Convert.ToBase64String b
-                    s (Json.serialize(sentTypeName, serialized)) callback)
+                    s (Convert.serialize (sentTypeName, serialized) Bridge.stringTuple) callback)
 
     static member private RPCSender(guid, bridgeName, value, sentType: System.Type) =
 
@@ -153,8 +156,8 @@ type Bridge private() =
         |> Option.iter
                (fun (_,_,s) ->
                     let typeInfo = createTypeInfo sentType
-                    let stringType = createTypeInfo typeof<string>
-                    s (Convert.serialize (sprintf "RPC|%O" guid, value) (TypeInfo.Tuple(fun () -> [|stringType;typeInfo|]))) ignore)
+                    let serialized = Convert.serialize value typeInfo
+                    s (Convert.serialize (sprintf "RPC|%O" guid, serialized) Bridge.stringTuple) ignore)
 
     static member RPCSend(guid: System.Guid, value: 'a, ?name, [<Inject>] ?resolver: ITypeResolver<'a>) =
         Bridge.RPCSender(guid, name, value, resolver.Value.ResolveType())
@@ -256,11 +259,11 @@ module Cmd =
 [<AutoOpen>]
 module RPC =
 
-    type IReplyChannel<'T> = {
+  type IReplyChannel<'T> = {
       ValueId : System.Guid
       ExceptionId : System.Guid
-     }
-    with
+    }
+  with
 
     member inline t.Reply(v:'T) =
         Bridge.RPCSend(t.ValueId, v)
