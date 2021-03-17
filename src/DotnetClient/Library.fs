@@ -98,6 +98,12 @@ module Bridge =
                 | Binary b -> System.Convert.ToBase64String b
             serialize(sentTypeName, serialized) |> o )
 
+    let internal rpcSender(guid:System.Guid, value: 'value, name: string option) =
+        mappings
+        |> Map.tryFind name
+        |> Option.iter(fun (_,o) ->
+            serialize(sprintf "RPC|%O" guid, value) |> o )
+
     let Send (server : 'Server) = sender(server, None)
 
     let NamedSend (name:string, server : 'Server) = sender(server, Some name)
@@ -213,3 +219,31 @@ module Program =
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
         program |> Program.withSubscription (fun _ -> [Bridge.attach config])
+
+
+[<RequireQualifiedAccess>]
+module Cmd =
+    /// Creates a `Cmd` from a server message.
+    let inline bridgeSend (msg:'server) : Cmd<'client> = [ fun _ -> Bridge.Send msg ]
+    /// Creates a `Cmd` from a server message using a named bridge.
+    let inline namedBridgeSend name (msg:'server) : Cmd<'client> = [ fun _ -> Bridge.NamedSend(name, msg) ]
+
+[<AutoOpen>]
+module RPC =
+
+    type IReplyChannel<'T> = {
+      ValueId : System.Guid
+      ExceptionId : System.Guid
+     }
+    with
+    member t.Reply(v:'T) =
+        Bridge.rpcSender(t.ValueId, v, None)
+    member t.ReplyNamed(name, v:'T) =
+        Bridge.rpcSender(t.ValueId, v, Some name)
+
+    member t.ReplyException(v:exn) =
+        Bridge.rpcSender(t.ExceptionId, v, None)
+    member t.ReplyExceptionNamed(name, v:'T) =
+        Bridge.rpcSender(t.ExceptionId, v, Some name)
+
+

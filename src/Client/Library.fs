@@ -144,6 +144,22 @@ type Bridge private() =
                         | Text e -> e
                         | Binary b -> System.Convert.ToBase64String b
                     s (Json.serialize(sentTypeName, serialized)) callback)
+
+    static member private RPCSender(guid, bridgeName, value, sentType: System.Type) =
+
+        !Helpers.mappings
+        |> Option.defaultValue Map.empty
+        |> Map.tryFind bridgeName
+        |> Option.iter
+               (fun (_,_,s) ->
+                    let typeInfo = createTypeInfo sentType
+                    let stringType = createTypeInfo typeof<string>
+                    s (Convert.serialize (sprintf "RPC|%O" guid, value) (TypeInfo.Tuple(fun () -> [|stringType;typeInfo|]))) ignore)
+
+    static member internal RPCSend(guid: System.Guid, value: 'a, ?name, [<Inject>] ?resolver: ITypeResolver<'a>) =
+        Bridge.RPCSender(guid, name, value, resolver.Value.ResolveType())
+
+
     /// Send the message to the server
     static member Send(server : 'Server,?callback, [<Inject>] ?resolver: ITypeResolver<'Server>) =
         Bridge.Sender(server, None, defaultArg callback ignore, resolver.Value.ResolveType())
@@ -237,3 +253,22 @@ module Cmd =
     let inline namedBridgeSend name (msg:'server) : Cmd<'client> = [ fun _ -> Bridge.NamedSend(name, msg) ]
     /// Creates a `Cmd` from a server message using a named bridge. Dispatches the client message if the bridge is broken.
     let inline namedBridgeSendOr name (msg:'server) (fallback:'client) : Cmd<'client> = [ fun dispatch -> Bridge.NamedSend(name, msg, fun () -> dispatch fallback) ]
+
+[<AutoOpen>]
+module RPC =
+
+    type IReplyChannel<'T> = {
+      ValueId : System.Guid
+      ExceptionId : System.Guid
+     }
+    with
+
+    member inline t.Reply(v:'T) =
+        Bridge.RPCSend(t.ValueId, v)
+    member inline t.ReplyNamed(name, v:'T) =
+        Bridge.RPCSend(t.ValueId, v, name)
+
+    member inline t.ReplyException(v:exn) =
+        Bridge.RPCSend(t.ExceptionId, v)
+    member inline t.ReplyExceptionNamed(name, v:'T) =
+        Bridge.RPCSend(t.ExceptionId, v, name)

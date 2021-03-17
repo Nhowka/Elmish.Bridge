@@ -1,3 +1,6 @@
+#### 5.0.0-rc-4
+* Experimental RPC support
+
 #### 5.0.0-rc-2
 * Use net5.0
 * Use Elmish Program as base to the server loop

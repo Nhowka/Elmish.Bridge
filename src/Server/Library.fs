@@ -4,6 +4,13 @@ open Elmish
 open Newtonsoft.Json
 open Fable.Remoting.Json
 
+[<AutoOpen>]
+module RPC =
+    type IReplyChannel<'T> = {
+      ValueId : System.Guid
+      ExceptionId : System.Guid
+    }
+
 module internal Helpers =
     open FSharp.Reflection
 
@@ -90,6 +97,8 @@ type internal ServerHubMessages<'model, 'server, 'client> =
     | AddClient of System.Guid * ServerHubData<'model, 'server, 'client>
     | UpdateModel of System.Guid * 'model
     | DropClient of System.Guid
+    | AddRPCCalback of value: (System.Guid * (string -> unit)) * exc: (System.Guid * (string -> unit))
+    | CallCallback of System.Guid * string
     | Dummy
 
 /// Holds the data of all connected clients
@@ -117,13 +126,30 @@ type ServerHub<'model, 'server, 'client>() =
         |> Map.add t.FullName (fun (o: obj) -> o :?> 'server)
 
 
-    let init () = Map.empty, Cmd.none
+    let init () = (Map.empty, Map.empty), Cmd.none
 
-    let update action data =
+    let update action (data, callbacks) =
         match action with
-        | Dummy -> data, Cmd.none
+        | Dummy -> (data, callbacks), Cmd.none
+        | AddRPCCalback ((vguid,vfun), (eguid, efun)) ->
+           (data,
+            callbacks
+            |> Map.add vguid (vfun, eguid)
+            |> Map.add eguid (efun, vguid)), Cmd.none
+        | CallCallback(guid, body) ->
+            match callbacks |> Map.tryFind guid with
+            | None ->  (data, callbacks), Cmd.none
+            | Some (func, oguid) ->
+                (data,
+                    callbacks
+                    |> Map.remove guid
+                    |> Map.remove oguid),
+                Cmd.OfAsync.result
+                    <| async {
+                        do func body
+                        return Dummy}
         | ServerBroadcast msg ->
-            data,
+            (data, callbacks),
             Cmd.OfAsync.result
             <| async {
                 data
@@ -133,7 +159,7 @@ type ServerHub<'model, 'server, 'client>() =
                 return Dummy
                }
         | ClientBroadcast msg ->
-            data,
+            (data, callbacks),
             Cmd.OfAsync.result
             <| async {
                 data
@@ -144,7 +170,7 @@ type ServerHub<'model, 'server, 'client>() =
 
                }
         | ServerSendIf (predicate, msg) ->
-            data,
+            (data, callbacks),
             Cmd.OfAsync.result
             <| async {
                 data
@@ -154,7 +180,7 @@ type ServerHub<'model, 'server, 'client>() =
                 return Dummy
                }
         | ClientSendIf (predicate, msg) ->
-            data,
+            (data, callbacks),
             Cmd.OfAsync.result
             <| async {
                 data
@@ -164,7 +190,7 @@ type ServerHub<'model, 'server, 'client>() =
                 return Dummy
                }
         | GetModels ar ->
-            data,
+            (data, callbacks),
             Cmd.OfAsync.result
             <| async {
                 data
@@ -174,14 +200,14 @@ type ServerHub<'model, 'server, 'client>() =
 
                 return Dummy
                }
-        | AddClient (guid, hd) -> (data |> Map.add guid hd), Cmd.none
+        | AddClient (guid, hd) -> (data |> Map.add guid hd, callbacks), Cmd.none
         | UpdateModel (guid, model) ->
-            data
+           (data
             |> Map.tryFind guid
             |> Option.map (fun hd -> data |> Map.add guid { hd with Model = model })
-            |> Option.defaultValue data,
+            |> Option.defaultValue data, callbacks),
             Cmd.none
-        | DropClient (guid) -> (data |> Map.remove guid), Cmd.none
+        | DropClient (guid) -> (data |> Map.remove guid, callbacks), Cmd.none
 
 
     let mutable dispatcher = None
@@ -213,10 +239,7 @@ type ServerHub<'model, 'server, 'client>() =
         this
 
     abstract BroadcastClient : 'inner -> unit
-    abstract BroadcastServer : 'inner -> unit
-    abstract SendClientIf : ('model -> bool) -> 'inner -> unit
-    abstract SendServerIf : ('model -> bool) -> 'inner -> unit
-    abstract GetModels : unit -> 'model list
+
 
     /// Send client message for all connected users
     default __.BroadcastClient(msg: 'inner) =
@@ -228,6 +251,8 @@ type ServerHub<'model, 'server, 'client>() =
                 |> ClientBroadcast
                 |> (dispatcher |> Option.defaultValue ignore))
 
+    abstract BroadcastServer : 'inner -> unit
+
     /// Send server message for all connected users
     default __.BroadcastServer(msg: 'inner) =
         serverMappings
@@ -237,6 +262,8 @@ type ServerHub<'model, 'server, 'client>() =
                 f msg
                 |> ServerBroadcast
                 |> (dispatcher |> Option.defaultValue ignore))
+
+    abstract SendClientIf : ('model -> bool) -> 'inner -> unit
 
     /// Send client message for all connected users if their `model` passes the predicate
     default __.SendClientIf predicate (msg: 'inner) =
@@ -248,6 +275,8 @@ type ServerHub<'model, 'server, 'client>() =
                 |> ClientSendIf
                 |> (dispatcher |> Option.defaultValue ignore))
 
+    abstract SendServerIf : ('model -> bool) -> 'inner -> unit
+
     /// Send server message for all connected users if their `model` passes the predicate
     default __.SendServerIf predicate (msg: 'inner) =
         serverMappings
@@ -258,6 +287,8 @@ type ServerHub<'model, 'server, 'client>() =
                 |> ServerSendIf
                 |> (dispatcher |> Option.defaultValue ignore))
 
+    abstract GetModels : unit -> 'model list
+
     /// Return the model of all connected users
     default __.GetModels() =
         Async.FromContinuations
@@ -267,7 +298,32 @@ type ServerHub<'model, 'server, 'client>() =
                 | None -> cont [])
         |> Async.RunSynchronously
 
+    abstract AskClient: Dispatch<'client> -> (IReplyChannel<'T> -> 'client) -> Async<'T>
 
+    /// Ask for a value for a specific client
+    default __.AskClient clientDispatcher (f: IReplyChannel<'T> -> 'client) =
+        let guidValue = System.Guid.NewGuid()
+        let guidExn = System.Guid.NewGuid()
+        let c =  [| FableJsonConverter() :> JsonConverter |]
+        Async.FromContinuations
+            (fun (cont, econt, ccont) ->
+                match dispatcher with
+                | Some d ->
+                    AddRPCCalback(
+                        (guidValue, fun e -> Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<'T>, c) :?> 'T |> cont),
+                        (guidExn, fun e -> Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<exn>, c) :?> exn |> econt))
+                    |> d
+                    clientDispatcher (f {ValueId = guidValue; ExceptionId = guidExn})
+                | None -> econt (exn("Hub not initalized")))
+
+    member private __.TreatReply(guid, body) =
+        dispatcher
+        |> Option.iter
+            (fun d -> d (CallCallback(guid, body)))
+
+    static member internal TreatReply(sh: ServerHub<'model, 'server, 'client> option, guid, body) =
+        sh
+        |> Option.iter (fun sh -> sh.TreatReply(guid, body))
 
     member private __.Init() : ServerHubInstance<'model, 'server, 'client> =
         let guid = System.Guid.NewGuid()
@@ -350,24 +406,32 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
     let write (o: 'client) =
         Newtonsoft.Json.JsonConvert.SerializeObject(o, c)
 
+    let mutable whenDown : 'server option = None
+    let mutable serverHub : ServerHub<'model, 'server, 'client> option = None
+
+
     let read dispatch str =
         logSMsg str
 
         let (name: string, o: string) =
             Newtonsoft.Json.JsonConvert.DeserializeObject(str, typeof<string * string>, c) :?> _
 
-        mappings
-        |> Helpers.tryFindType name
-        |> Option.iter (
-            function
-            | Text e -> e o
-            | Binary e -> e (System.Convert.FromBase64String o)
-            >> dispatch
-        )
+        match name.Split('|') with
+        | [|"RPC"; guid|] ->
+            let g = System.Guid.Parse(guid)
+            ServerHub.TreatReply(serverHub, g, o)
+        | [|name|] ->
+            mappings
+            |> Helpers.tryFindType name
+            |> Option.iter (
+                function
+                | Text e -> e o
+                | Binary e -> e (System.Convert.FromBase64String o)
+                >> dispatch
+            )
+        | _ -> ()
 
 
-    let mutable whenDown : 'server option = None
-    let mutable serverHub : ServerHub<'model, 'server, 'client> option = None
 
     /// Server msg passed to the `update` function when the connection is closed
     member this.WithWhenDown n =
