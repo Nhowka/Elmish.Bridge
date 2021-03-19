@@ -75,10 +75,17 @@ type BridgeConfig<'Msg,'ElmishMsg> =
             urlMode = this.urlMode
         }
 
+    interface System.IDisposable with
+        member t.Dispose() =
+            !Helpers.mappings
+            |> Option.defaultValue Map.empty
+            |> Map.tryFind t.name
+            |> Option.bind (fun (_, socket, _) -> !socket)
+            |> Option.iter (fun s -> s.close())
+
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-    member inline this.Attach() =
-     let subs dispatch =
+    member inline this.Attach dispatch =
         let url =
             match this.urlMode with
             | Replace ->
@@ -161,7 +168,6 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                     | Some socket -> socket.send e
                     | None -> callback ()))
             |> Some
-     subs
 
 type Bridge private() =
 
@@ -304,9 +310,8 @@ module Bridge =
 
     /// Creates a subscription to be used with `Cmd.OfSub`. That enables starting Bridge with
     /// a configuration obtained after the `Program` has already started
-    let inline asSubscription (this:BridgeConfig<_,_>) =
-        this.Attach()
-
+    let inline asSubscription (this:BridgeConfig<_,_>) dispatch =
+        this.Attach dispatch
 
 [<RequireQualifiedAccess>]
 module Program =
@@ -314,12 +319,12 @@ module Program =
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridge endpoint (program : Program<_, _, _, _>) =
-        program |> Program.withSubscription (fun _ -> [Bridge.endpoint(endpoint).Attach()])
+        program |> Program.withSubscription (fun _ -> [Bridge.endpoint(endpoint).Attach])
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
-       program |> Program.withSubscription (fun _ -> [config.Attach ()])
+       program |> Program.withSubscription (fun _ -> [config.Attach])
 
 [<RequireQualifiedAccess>]
 module Cmd =

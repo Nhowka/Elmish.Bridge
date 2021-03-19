@@ -1,3 +1,9 @@
+#### 5.0.0-rc-8
+* Support `Dispose`
+
+#### 5.0.0-rc-7
+* Experimental RPC support on client to server
+
 #### 5.0.0-rc-4
 * Experimental RPC support
 
