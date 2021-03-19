@@ -4,15 +4,34 @@ open Elmish
 open Newtonsoft.Json
 open Fable.Remoting.Json
 
-[<AutoOpen>]
-module RPC =
-    type IReplyChannel<'T> = {
-      ValueId : System.Guid
-      ExceptionId : System.Guid
-    }
-
 module internal Helpers =
     open FSharp.Reflection
+
+    let converter = [| FableJsonConverter() :> JsonConverter |]
+
+    let rpcBag =
+        MailboxProcessor.Start(
+            fun mb ->
+              let rec loop mp =
+                async {
+                  match! mb.Receive() with
+                  | Choice1Of2 ((gv:System.Guid,f:(string -> unit)),(ge,e)) ->
+                       return!
+                            mp
+                            |> Map.add gv (f,ge)
+                            |> Map.add ge (e,gv)
+                            |> loop
+                  | Choice2Of2 (g,s) ->
+                       match mp |> Map.tryFind g with
+                       | Some (f,e) ->
+                            f s
+                            return! mp |> Map.remove g |> Map.remove e |> loop
+                       | None -> return! loop mp
+
+
+                    }
+              loop Map.empty
+        )
 
     let rec unroll (t: System.Type) =
         seq {
@@ -302,16 +321,17 @@ type ServerHub<'model, 'server, 'client>() =
 
     /// Ask for a value for a specific client
     default __.AskClient clientDispatcher (f: IReplyChannel<'T> -> 'client) =
-        let guidValue = System.Guid.NewGuid()
-        let guidExn = System.Guid.NewGuid()
-        let c =  [| FableJsonConverter() :> JsonConverter |]
+
         Async.FromContinuations
             (fun (cont, econt, ccont) ->
+                let guidValue = System.Guid.NewGuid()
+                let guidExn = System.Guid.NewGuid()
+
                 match dispatcher with
                 | Some d ->
                     AddRPCCalback(
-                        (guidValue, fun e -> Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<'T>, c) :?> 'T |> cont),
-                        (guidExn, fun e -> Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<exn>, c) :?> exn |> econt))
+                        (guidValue, fun e -> Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<'T>, Helpers.converter) :?> 'T |> cont),
+                        (guidExn, fun e -> Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<exn>, Helpers.converter) :?> exn |> econt))
                     |> d
                     clientDispatcher (f {ValueId = guidValue; ExceptionId = guidExn})
                 | None -> econt (exn("Hub not initalized")))
@@ -372,10 +392,6 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
     let mutable logInit = ignore
     let mutable logModel = ignore
 
-    static let c =
-        [| FableJsonConverter() :> JsonConverter |]
-
-
     let mutable mappings =
         let t = typeof<'server>
 
@@ -395,7 +411,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
                 (fun _ (t, f) ->
                     Text
                         (fun (i: string) ->
-                            Newtonsoft.Json.JsonConvert.DeserializeObject(i, t, c)
+                            Newtonsoft.Json.JsonConvert.DeserializeObject(i, t, Helpers.converter)
                             |> f
                             :?> 'server))
 
@@ -404,31 +420,47 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
 
 
     let write (o: 'client) =
-        Newtonsoft.Json.JsonConvert.SerializeObject(o, c)
+        Newtonsoft.Json.JsonConvert.SerializeObject(o, Helpers.converter)
 
     let mutable whenDown : 'server option = None
     let mutable serverHub : ServerHub<'model, 'server, 'client> option = None
 
 
-    let read dispatch str =
+    let read send dispatch str =
         logSMsg str
 
         let (name: string, o: string) =
-            Newtonsoft.Json.JsonConvert.DeserializeObject(str, typeof<string * string>, c) :?> _
+            Newtonsoft.Json.JsonConvert.DeserializeObject(str, typeof<string * string>, Helpers.converter) :?> _
 
         match name.Split('|') with
         | [|"RPC"; guid|] ->
             let g = System.Guid.Parse(guid)
             ServerHub.TreatReply(serverHub, g, o)
+        | [|"RPC";vguid;eguid;name|] ->
+            mappings
+            |> Helpers.tryFindType (name.Replace('+', '.'))
+            |> function
+               | None -> sprintf "E%s" eguid |> send
+               | Some e ->
+                    e |>
+                    function
+                    | Text e -> e o
+                    | Binary e -> e (System.Convert.FromBase64String o)
+                    |> (fun o ->
+                            Helpers.rpcBag.Post(
+                              Choice1Of2 (
+                                (System.Guid.Parse vguid, sprintf "R%s%s" vguid >> send),
+                                (System.Guid.Parse eguid, sprintf "R%s%s" eguid >> send)))
+                            o)
+                    |> dispatch
         | [|name|] ->
             mappings
-            |> Helpers.tryFindType name
+            |> Helpers.tryFindType (name.Replace('+', '.'))
             |> Option.iter (
                 function
                 | Text e -> e o
                 | Binary e -> e (System.Convert.FromBase64String o)
-                >> dispatch
-            )
+                >> dispatch)
         | _ -> ()
 
 
@@ -455,7 +487,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
                 name
                 (Text
                     (fun (i: string) ->
-                        Newtonsoft.Json.JsonConvert.DeserializeObject<'Inner>(i, c)
+                        Newtonsoft.Json.JsonConvert.DeserializeObject<'Inner>(i, Helpers.converter)
                         |> map))
 
         this
@@ -595,7 +627,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
                     with _ -> Cmd.none)
             |> Program.runWith arg
 
-            read (Some >> (dispatch |> Option.defaultValue ignore)),
+            read (action >> Async.Start) (Some >> (dispatch |> Option.defaultValue ignore)),
             (fun () -> dispatch |> Option.iter (fun d -> d None))
 
         server endpoint inbox
@@ -642,3 +674,14 @@ module Bridge =
     /// Creates a websocket loop with `unit` for the `init` function.
     /// `program`: program created with `mkProgram`.
     let run server (program: BridgeServer<_, _, _, _, _>) = program.Start server ()
+
+[<AutoOpen>]
+module RPC =
+
+  type RPC.IReplyChannel<'T> with
+
+    member t.Reply(v:'T) =
+       Helpers.rpcBag.Post(Choice2Of2(t.ValueId, Newtonsoft.Json.JsonConvert.SerializeObject(v, Helpers.converter)))
+
+    member t.ReplyException(v:exn) =
+       Helpers.rpcBag.Post(Choice2Of2(t.ExceptionId, Newtonsoft.Json.JsonConvert.SerializeObject(v, Helpers.converter)))

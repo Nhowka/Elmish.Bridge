@@ -32,6 +32,14 @@ module Helpers =
             cell
         | Some m -> m
 
+    let rpcmappings : Map<System.Guid, (string -> unit) * System.Guid> option ref =
+        match Dom.window?Elmish_Bridge_RpcHelpers with
+        | None ->
+            let cell = ref (Some Map.empty)
+            Dom.window?Elmish_Bridge_RpcHelpers <- cell
+            cell
+        | Some m -> m
+
 /// Configures the mode about how the endpoint is used
 type UrlMode =
     | Append
@@ -106,10 +114,41 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                     Dom.window.setTimeout
                         ((fun () -> websocket timeout server), timeout, ()) |> ignore
                 socket.onmessage <- fun e ->
-                         Json.tryParseNativeAs(string e.data)
-                         |> function
-                            | Ok msg -> msg |> this.mapping |> dispatch
-                            | _ -> ()
+                         let message = string e.data
+                         if message.StartsWith "R" then
+                            let guid = (System.Guid.Parse message.[1..36])
+                            let json = message.[37..]
+                            !Helpers.rpcmappings
+                            |> Option.defaultValue Map.empty
+                            |> Map.tryFind  guid
+                            |> Option.iter(fun (f,og) ->
+                                f json
+                                Helpers.rpcmappings :=
+                                    !Helpers.rpcmappings
+                                    |> Option.map( fun m  ->
+                                        m
+                                        |> Map.remove guid
+                                        |> Map.remove og)
+                                )
+                         elif message.StartsWith "E" then
+                            let guid = (System.Guid.Parse message.[1..])
+                            !Helpers.rpcmappings
+                            |> Option.defaultValue Map.empty
+                            |> Map.tryFind  guid
+                            |> Option.iter(fun (f,og) ->
+                                f (Json.serialize (exn("Server couldn't process your message")))
+                                Helpers.rpcmappings :=
+                                    !Helpers.rpcmappings
+                                    |> Option.map( fun m  ->
+                                        m
+                                        |> Map.remove guid
+                                        |> Map.remove og)
+                                )
+                         else
+                             Json.tryParseNativeAs(string e.data)
+                             |> function
+                                | Ok msg -> msg |> this.mapping |> dispatch
+                                | _ -> ()
         websocket (this.retryTime * 1000) (url.href.TrimEnd '#')
         Helpers.mappings :=
             !Helpers.mappings
@@ -130,13 +169,13 @@ type Bridge private() =
 
     static member private Sender(server : 'Server, bridgeName, callback, sentType: System.Type) =
 
-
         let sentTypeName = sentType.FullName.Replace('+','.')
         !Helpers.mappings
         |> Option.defaultValue Map.empty
         |> Map.tryFind bridgeName
-        |> Option.iter
-               (fun (m,_,s) ->
+        |> function
+           | None -> callback ()
+           | Some (m,_,s) ->
                     let serializer =
                         m
                         |> Map.tryFind sentTypeName
@@ -146,7 +185,7 @@ type Bridge private() =
                         match serializer server with
                         | Text e -> e
                         | Binary b -> System.Convert.ToBase64String b
-                    s (Convert.serialize (sentTypeName, serialized) Bridge.stringTuple) callback)
+                    s (Convert.serialize (sentTypeName, serialized) Bridge.stringTuple) callback
 
     static member private RPCSender(guid, bridgeName, value, sentType: System.Type) =
 
@@ -169,6 +208,43 @@ type Bridge private() =
     /// Send the message to the server using a named bridge
     static member NamedSend(name:string, server : 'Server,?callback, [<Inject>] ?resolver: ITypeResolver<'Server>) =
         Bridge.Sender(server, Some name, defaultArg callback ignore, resolver.Value.ResolveType())
+
+
+    static member AskServer(f: IReplyChannel<'T> -> 'Server, [<Inject>] ?resolverT: ITypeResolver<'T>, [<Inject>] ?resolverServer: ITypeResolver<'Server> ) : Async<'T> =
+        Bridge.Asker(f, None, resolverServer.Value.ResolveType(), resolverT.Value.ResolveType() )
+
+    static member AskNamedServer(f: IReplyChannel<'T> -> 'Server, name, [<Inject>] ?resolverT: ITypeResolver<'T>, [<Inject>] ?resolverServer: ITypeResolver<'Server> ) : Async<'T> =
+        Bridge.Asker(f, Some name, resolverServer.Value.ResolveType(), resolverT.Value.ResolveType() )
+
+
+    static member private Asker(f, bridgeName, sentType, ttype ) =
+        Async.FromContinuations(fun (cont, econt, _) ->
+            let guidValue = System.Guid.NewGuid()
+            let guidExn = System.Guid.NewGuid()
+            let typeInfoT = createTypeInfo ttype
+            let typeInfoExn = createTypeInfo typeof<exn>
+
+            let reply typeInfo cont s =
+                let json = SimpleJson.parse s
+                Convert.fromJsonAs json typeInfo |> unbox |> cont
+
+            Helpers.rpcmappings :=
+                !Helpers.rpcmappings
+                |> Option.defaultValue Map.empty
+                |> Map.add guidExn ((fun s -> reply typeInfoExn econt s), guidValue)
+                |> Map.add guidValue ((fun s -> reply typeInfoT cont s), guidExn)
+                |> Some
+
+            let sentTypeName = sentType.FullName.Replace('+','.')
+            !Helpers.mappings
+            |> Option.defaultValue Map.empty
+            |> Map.tryFind bridgeName
+            |> function
+               | None -> econt (exn("Bridge does not exist"))
+               | Some (_,_,s) ->
+                    let serialized = Convert.serialize (f {ValueId = guidValue; ExceptionId = guidExn}) (createTypeInfo sentType)
+                    s (Convert.serialize (sprintf "RPC|%O|%O|%s" guidValue guidExn sentTypeName, serialized) Bridge.stringTuple) (fun () -> econt (exn("Socket is closed")))
+        )
 
 [<RequireQualifiedAccess>]
 module Bridge =
@@ -259,11 +335,7 @@ module Cmd =
 [<AutoOpen>]
 module RPC =
 
-  type IReplyChannel<'T> = {
-      ValueId : System.Guid
-      ExceptionId : System.Guid
-    }
-  with
+  type RPC.IReplyChannel<'T> with
 
     member inline t.Reply(v:'T) =
         Bridge.RPCSend(t.ValueId, v)

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Server part of Elmish.Bridge</Description>
+    <Description>RPC shared part of Elmish.Bridge</Description>
     <PackageProjectUrl>https://github.com/Nhowka/Elmish.Bridge</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Nhowka/Elmish.Bridge.git</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -15,10 +15,9 @@
 
   <ItemGroup>
     <Compile Include="Library.fs" />
-    <Content Include="paket.references" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\RPC\Elmish.Bridge.RPC.fsproj" />
+    <Content Include="*.fsproj; *.fs" Exclude="**\*.fs.js" PackagePath="fable\" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 
