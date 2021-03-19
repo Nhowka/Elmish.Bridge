@@ -33,6 +33,42 @@ module internal Helpers =
               loop Map.empty
         )
 
+    let ``|Is|_|``<'a> (o:obj) =
+        match o with
+        | :? 'a as v -> Some v
+        | _ -> None
+
+    let (|GUID|_|) (s:string) =
+        match System.Guid.TryParse s with
+        | true, g -> Some g
+        | _ -> None
+
+    let findGuids (json:string) : (System.Guid * System.Guid) list =
+        [
+            use sr = new System.IO.StringReader(json)
+            use reader = new JsonTextReader(sr);
+            while reader.Read() do
+               yield
+                match reader.TokenType, reader.Value with
+                |t, null -> Choice1Of2 t
+                |t,v -> Choice2Of2 (t,v)
+        ]
+        |> List.windowed 6
+        |> List.choose (function
+            | [Choice1Of2(JsonToken.StartObject)
+               Choice2Of2(JsonToken.PropertyName, Is("ExceptionId"|"ValueId" as p1))
+               Choice2Of2(JsonToken.String, Is(GUID v1))
+               Choice2Of2(JsonToken.PropertyName, Is("ExceptionId"|"ValueId"))
+               Choice2Of2(JsonToken.String, Is(GUID v2))
+               Choice1Of2(JsonToken.EndObject)] ->
+                    if p1 = "ExceptionId" then
+                        Some (v2, v1)
+                    else Some (v1, v2)
+            | _ -> None)
+        |> List.distinct
+
+
+
     let rec unroll (t: System.Type) =
         seq {
             if FSharpType.IsUnion t then
@@ -433,26 +469,29 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
             Newtonsoft.Json.JsonConvert.DeserializeObject(str, typeof<string * string>, Helpers.converter) :?> _
 
         match name.Split('|') with
-        | [|"RPC"; guid|] ->
+        | [|"RC"; guid|] ->
             let g = System.Guid.Parse(guid)
             ServerHub.TreatReply(serverHub, g, o)
-        | [|"RPC";vguid;eguid;name|] ->
-            mappings
-            |> Helpers.tryFindType (name.Replace('+', '.'))
-            |> function
-               | None -> sprintf "E%s" eguid |> send
-               | Some e ->
-                    e |>
-                    function
-                    | Text e -> e o
-                    | Binary e -> e (System.Convert.FromBase64String o)
-                    |> (fun o ->
-                            Helpers.rpcBag.Post(
-                              Choice1Of2 (
-                                (System.Guid.Parse vguid, sprintf "R%s%s" vguid >> send),
-                                (System.Guid.Parse eguid, sprintf "R%s%s" eguid >> send)))
-                            o)
-                    |> dispatch
+        | [|"RS"; name|] ->
+            match Helpers.findGuids o with
+            |[vguid,eguid] ->
+                mappings
+                |> Helpers.tryFindType (name.Replace('+', '.'))
+                |> function
+                   | None -> sprintf "E%O" eguid |> send
+                   | Some e ->
+                        e |>
+                        function
+                        | Text e -> e o
+                        | Binary e -> e (System.Convert.FromBase64String o)
+                        |> (fun o ->
+                                Helpers.rpcBag.Post(
+                                  Choice1Of2 (
+                                    (vguid, sprintf "R%O%s" vguid >> send),
+                                    (eguid, sprintf "R%O%s" eguid >> send)))
+                                o)
+                        |> dispatch
+            | _ -> ()
         | [|name|] ->
             mappings
             |> Helpers.tryFindType (name.Replace('+', '.'))

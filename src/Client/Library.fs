@@ -202,7 +202,7 @@ type Bridge private() =
                (fun (_,_,s) ->
                     let typeInfo = createTypeInfo sentType
                     let serialized = Convert.serialize value typeInfo
-                    s (Convert.serialize (sprintf "RPC|%O" guid, serialized) Bridge.stringTuple) ignore)
+                    s (Convert.serialize (sprintf "RC|%O" guid, serialized) Bridge.stringTuple) ignore)
 
     static member RPCSend(guid: System.Guid, value: 'a, ?name, [<Inject>] ?resolver: ITypeResolver<'a>) =
         Bridge.RPCSender(guid, name, value, resolver.Value.ResolveType())
@@ -249,7 +249,7 @@ type Bridge private() =
                | None -> econt (exn("Bridge does not exist"))
                | Some (_,_,s) ->
                     let serialized = Convert.serialize (f {ValueId = guidValue; ExceptionId = guidExn}) (createTypeInfo sentType)
-                    s (Convert.serialize (sprintf "RPC|%O|%O|%s" guidValue guidExn sentTypeName, serialized) Bridge.stringTuple) (fun () -> econt (exn("Socket is closed")))
+                    s (Convert.serialize (sprintf "RS|%s" sentTypeName, serialized) Bridge.stringTuple) (fun () -> econt (exn("Socket is closed")))
         )
 
 [<RequireQualifiedAccess>]
