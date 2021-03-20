@@ -27,11 +27,8 @@ module internal Helpers =
                             f s
                             return! mp |> Map.remove g |> Map.remove e |> loop
                        | None -> return! loop mp
-
-
                     }
-              loop Map.empty
-        )
+              loop Map.empty)
 
     let ``|Is|_|``<'a> (o:obj) =
         match o with
@@ -44,7 +41,7 @@ module internal Helpers =
         | _ -> None
 
     let findGuids (json:string) : (System.Guid * System.Guid) list =
-        [
+        seq {
             use sr = new System.IO.StringReader(json)
             use reader = new JsonTextReader(sr);
             while reader.Read() do
@@ -52,20 +49,22 @@ module internal Helpers =
                 match reader.TokenType, reader.Value with
                 |t, null -> Choice1Of2 t
                 |t,v -> Choice2Of2 (t,v)
-        ]
-        |> List.windowed 6
-        |> List.choose (function
-            | [Choice1Of2(JsonToken.StartObject)
-               Choice2Of2(JsonToken.PropertyName, Is("ExceptionId"|"ValueId" as p1))
+        }
+        |> Seq.windowed 6
+        |> Seq.choose (function
+            |[|Choice1Of2(JsonToken.StartObject)
+               Choice2Of2(JsonToken.PropertyName, p1)
                Choice2Of2(JsonToken.String, Is(GUID v1))
-               Choice2Of2(JsonToken.PropertyName, Is("ExceptionId"|"ValueId"))
+               Choice2Of2(JsonToken.PropertyName, p2)
                Choice2Of2(JsonToken.String, Is(GUID v2))
-               Choice1Of2(JsonToken.EndObject)] ->
-                    if p1 = "ExceptionId" then
-                        Some (v2, v1)
-                    else Some (v1, v2)
+               Choice1Of2(JsonToken.EndObject)|] ->
+                    match p1,p2 with
+                    | Is("ValueId"), Is("ExceptionId") -> Some(v1,v2)
+                    | Is("ExceptionId"), Is("ValueId") -> Some (v2,v1)
+                    |_ -> None
             | _ -> None)
-        |> List.distinct
+        |> Seq.distinct
+        |> Seq.toList
 
 
 
@@ -144,8 +143,6 @@ type ServerHubInstance<'model, 'server, 'client> =
           Update = ignore }
 
 type internal ServerHubMessages<'model, 'server, 'client> =
-    | ServerBroadcast of 'server
-    | ClientBroadcast of 'client
     | ServerSendIf of ('model -> bool) * 'server
     | ClientSendIf of ('model -> bool) * 'client
     | GetModels of ('model list -> unit)
@@ -154,6 +151,11 @@ type internal ServerHubMessages<'model, 'server, 'client> =
     | DropClient of System.Guid
     | AddRPCCalback of value: (System.Guid * (string -> unit)) * exc: (System.Guid * (string -> unit))
     | CallCallback of System.Guid * string
+    | SendMessages of (Dispatch<'client> * 'client)[]
+    | AskAllClientsIf of predicate: ('model -> bool) *
+        f: (unit -> 'client * System.Guid * System.Guid) *
+        onValue: (Dispatch<'client> -> Dispatch<'server> -> string -> unit) *
+        onException: (Dispatch<'client> -> Dispatch<'server> -> string -> unit)
     | Dummy
 
 /// Holds the data of all connected clients
@@ -186,6 +188,31 @@ type ServerHub<'model, 'server, 'client>() =
     let update action (data, callbacks) =
         match action with
         | Dummy -> (data, callbacks), Cmd.none
+        | SendMessages messages ->
+            (data, callbacks),
+            Cmd.OfAsync.result
+            <| async {
+                messages
+                |> Array.Parallel.iter (fun (d,m) -> d m)
+                return Dummy }
+        | AskAllClientsIf(predicate, msgGen, onValue, onExn ) ->
+           let cbs, toSend =
+                data
+                |> Map.toArray
+                |> Array.choose
+                    (fun (_,{ Model = m; ServerDispatch = sd; ClientDispatch = cd }) ->
+                        if predicate m then
+                            let msg, vguid, eguid = msgGen()
+                            ([|
+                                vguid, onValue cd sd, eguid
+                                eguid, onExn cd sd, vguid
+                            |], (cd, msg)) |> Some
+                        else None
+                        )
+                |> Array.unzip
+                |> fun (c,ts) -> Array.concat c, ts
+           (data, (callbacks, cbs) ||> Array.fold (fun m (g,f,og) -> m |> Map.add g (f,og))),
+           SendMessages toSend |> Cmd.ofMsg
         | AddRPCCalback ((vguid,vfun), (eguid, efun)) ->
            (data,
             callbacks
@@ -203,27 +230,6 @@ type ServerHub<'model, 'server, 'client>() =
                     <| async {
                         do func body
                         return Dummy}
-        | ServerBroadcast msg ->
-            (data, callbacks),
-            Cmd.OfAsync.result
-            <| async {
-                data
-                |> Map.toArray
-                |> Array.Parallel.iter (fun (_, { ServerDispatch = d }) -> msg |> d)
-
-                return Dummy
-               }
-        | ClientBroadcast msg ->
-            (data, callbacks),
-            Cmd.OfAsync.result
-            <| async {
-                data
-                |> Map.toArray
-                |> Array.Parallel.iter (fun (_, { ClientDispatch = d }) -> msg |> d)
-
-                return Dummy
-
-               }
         | ServerSendIf (predicate, msg) ->
             (data, callbacks),
             Cmd.OfAsync.result
@@ -297,26 +303,14 @@ type ServerHub<'model, 'server, 'client>() =
 
 
     /// Send client message for all connected users
-    default __.BroadcastClient(msg: 'inner) =
-        clientMappings
-        |> Helpers.tryFindType typeof<'inner>.FullName
-        |> Option.iter
-            (fun f ->
-                f msg
-                |> ClientBroadcast
-                |> (dispatcher |> Option.defaultValue ignore))
+    default sh.BroadcastClient(msg: 'inner) =
+        sh.SendClientIf (fun _ -> true) msg
 
     abstract BroadcastServer : 'inner -> unit
 
     /// Send server message for all connected users
-    default __.BroadcastServer(msg: 'inner) =
-        serverMappings
-        |> Helpers.tryFindType typeof<'inner>.FullName
-        |> Option.iter
-            (fun f ->
-                f msg
-                |> ServerBroadcast
-                |> (dispatcher |> Option.defaultValue ignore))
+    default sh.BroadcastServer(msg: 'inner) =
+        sh.SendClientIf (fun _ -> true) msg
 
     abstract SendClientIf : ('model -> bool) -> 'inner -> unit
 
@@ -357,7 +351,6 @@ type ServerHub<'model, 'server, 'client>() =
 
     /// Ask for a value for a specific client
     default __.AskClient clientDispatcher (f: IReplyChannel<'T> -> 'client) =
-
         Async.FromContinuations
             (fun (cont, econt, ccont) ->
                 let guidValue = System.Guid.NewGuid()
@@ -371,6 +364,48 @@ type ServerHub<'model, 'server, 'client>() =
                     |> d
                     clientDispatcher (f {ValueId = guidValue; ExceptionId = guidExn})
                 | None -> econt (exn("Hub not initalized")))
+
+    abstract AskAllClients:
+        (IReplyChannel<'T> -> 'client) ->
+        (Dispatch<'client> -> Dispatch<'server> -> 'T -> unit) ->
+        (Dispatch<'client> -> Dispatch<'server> -> exn -> unit) ->
+        unit
+
+    /// Ask for a value for all clients and call function with result
+    default sh.AskAllClients
+        (f: IReplyChannel<'T> -> 'client)
+        (onValue: Dispatch<'client> -> Dispatch<'server> -> 'T -> unit)
+        (onException: Dispatch<'client> -> Dispatch<'server> -> exn -> unit) =
+            sh.AskAllClientsIf (fun _ -> true) f onValue onException
+
+    abstract AskAllClientsIf:
+        ('model -> bool) ->
+        (IReplyChannel<'T> -> 'client) ->
+        (Dispatch<'client> -> Dispatch<'server> -> 'T -> unit) ->
+        (Dispatch<'client> -> Dispatch<'server> -> exn -> unit) ->
+        unit
+
+    /// Ask for a value for all clients and call function with result if their `model` passes the predicate
+    default __.AskAllClientsIf
+        (predicate: 'model -> bool)
+        (f: IReplyChannel<'T> -> 'client)
+        (onValue: Dispatch<'client> -> Dispatch<'server> -> 'T -> unit)
+        (onException: Dispatch<'client> -> Dispatch<'server> -> exn -> unit) =
+            match dispatcher with
+            | None -> ()
+            | Some d ->
+                AskAllClientsIf(
+                    predicate,
+                    (fun () ->
+                        let guidValue = System.Guid.NewGuid()
+                        let guidExn = System.Guid.NewGuid()
+                        f {ValueId = guidValue; ExceptionId = guidExn}, guidValue, guidExn),
+                    (fun s c e ->
+                        let t = Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<'T>, Helpers.converter) :?> 'T
+                        onValue s c t),
+                    (fun s c e ->
+                        let t = Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<exn>, Helpers.converter) :?> exn
+                        onException s c t)) |> d
 
     member private __.TreatReply(guid, body) =
         dispatcher
