@@ -1,3 +1,6 @@
+#### 5.0.0-rc-9-2
+* Stop socket recreation when disposed
+
 #### 5.0.0-rc-8
 * Support `Dispose`
 

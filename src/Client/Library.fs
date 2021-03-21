@@ -24,7 +24,7 @@ module Helpers =
         url.hash <- ""
         url
 
-    let mappings : Map<string option, Map<string, obj -> SerializerResult> * WebSocket option ref * (string -> (unit -> unit) -> unit)> option ref =
+    let mappings : Map<string option, Map<string, obj -> SerializerResult> * (WebSocket option * bool) ref * (string -> (unit -> unit) -> unit)> option ref =
         match Dom.window?Elmish_Bridge_Helpers with
         | None ->
             let cell = ref (Some Map.empty)
@@ -80,8 +80,12 @@ type BridgeConfig<'Msg,'ElmishMsg> =
             !Helpers.mappings
             |> Option.defaultValue Map.empty
             |> Map.tryFind t.name
-            |> Option.bind (fun (_, socket, _) -> !socket)
-            |> Option.iter (fun s -> s.close())
+            |> Option.iter (fun (_, socket, _) ->
+                let (skt,_) = !socket
+                socket := (None, true)
+                skt |> Option.iter (fun e -> e.close())
+                )
+
 
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
@@ -103,22 +107,27 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                 let url = Browser.Url.URL.Create this.path
                 url.protocol <- url.protocol.Replace("http", "ws")
                 url
-        let wsref : WebSocket option ref =
+        let wsref : (WebSocket option * bool) ref =
             !Helpers.mappings
             |> Option.defaultValue Map.empty
             |> Map.tryFind this.name
-            |> Option.map (fun (_, socket, _) -> socket)
-            |> Option.defaultValue (ref None)
+            |> Option.bind (fun (_, socket, _) ->
+                match !socket with
+                | None, true -> None
+                | _ -> Some socket)
+            |> Option.defaultValue (ref (None, false))
         let rec websocket timeout server =
             match !wsref with
-            |Some _ -> ()
-            |None ->
+            | Some _, _ | None, true -> ()
+            | None, false ->
                 let socket = WebSocket.Create server
-                wsref := Some socket
+                wsref := Some socket, false
                 socket.onclose <- fun _ ->
-                    wsref := None
+                    let (_,closed) = !wsref
+                    wsref := None, closed
                     this.whenDown |> Option.iter dispatch
-                    Dom.window.setTimeout
+                    if not closed then
+                      Dom.window.setTimeout
                         ((fun () -> websocket timeout server), timeout, ()) |> ignore
                 socket.onmessage <- fun e ->
                          let message = string e.data
@@ -165,8 +174,8 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                  wsref,
                  (fun e callback ->
                     match !wsref with
-                    | Some socket -> socket.send e
-                    | None -> callback ()))
+                    | Some socket, _ -> socket.send e
+                    | None, _ -> callback ()))
             |> Some
 
 type Bridge private() =
