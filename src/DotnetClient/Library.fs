@@ -23,6 +23,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
 [<RequireQualifiedAccess>]
 module Bridge =
     let mutable private mappings : Map<string option, Map<string, obj -> SerializerResult> * (string -> unit)> = Map.empty
+    let mutable private rpcMappings : Map<Guid, (string -> unit) * Guid> = Map.empty
     let private fableConverter = FableJsonConverter() :> JsonConverter
     let private serialize result = JsonConvert.SerializeObject(result, [| fableConverter |])
     let private settings = JsonSerializerSettings(DateParseHandling = DateParseHandling.None, Converters = [| fableConverter |])
@@ -102,11 +103,41 @@ module Bridge =
         mappings
         |> Map.tryFind name
         |> Option.iter(fun (_,o) ->
-            serialize(sprintf "RPC|%O" guid, value) |> o )
+            serialize(sprintf "RC|%O" guid, serialize value) |> o )
+
+    let internal rpcAsker(f: IReplyChannel<'T> -> 'Server, bridgeName ) =
+        Async.FromContinuations(fun (cont, econt, _) ->
+            let guidValue = Guid.NewGuid()
+            let guidExn = Guid.NewGuid()
+            let sentTypeName = typeof<'Server>.FullName.Replace('+','.')
+
+
+            let reply (cont : 'T -> unit) s =
+                JsonConvert.DeserializeObject<'T>(s, settings)  |> cont
+
+            rpcMappings <-
+                rpcMappings
+                |> Map.add guidExn ((fun s -> reply econt s), guidValue)
+                |> Map.add guidValue ((fun s -> reply cont s), guidExn)
+
+            mappings
+            |> Map.tryFind bridgeName
+            |> function
+               | None -> econt (exn("Bridge does not exist"))
+               | Some (_,s) ->
+                    let serialized = serialize (f {ValueId = guidValue; ExceptionId = guidExn})
+                    s (serialize (sprintf "RS|%s" sentTypeName, serialized))
+        )
 
     let Send (server : 'Server) = sender(server, None)
 
     let NamedSend (name:string, server : 'Server) = sender(server, Some name)
+
+    let AskServer(f: IReplyChannel<'T> -> 'Server) : Async<'T> =
+        rpcAsker(f, None)
+
+    let AskNamedServer(f: IReplyChannel<'T> -> 'Server, name) : Async<'T> =
+        rpcAsker(f, Some name)
 
     let internal attach (config:BridgeConfig<'Msg,'ElmishMsg>) =
         let dispatcher dispatch =
@@ -152,17 +183,39 @@ module Bridge =
                             let data = data::buffer
                             if complete then
                                 let data = data |> List.rev |> Array.concat
-                                let inputJson = System.Text.Encoding.UTF8.GetString data
-                                let parsedJson =
-                                    try
-                                        JsonConvert.DeserializeObject<'Msg>(inputJson, settings) |> Ok
-                                    with
-                                    | ex ->
-                                        Error ex.Message
-                                match parsedJson with
-                                | Ok msg -> msg |> config.mapping |> dispatch
-                                | Error er -> eprintfn "%s" er
-                                return! receiver []
+                                let message = System.Text.Encoding.UTF8.GetString data
+                                if message.StartsWith "R" then
+                                    let guid = (System.Guid.Parse message.[1..36])
+                                    let json = message.[37..]
+                                    rpcMappings
+                                    |> Map.tryFind  guid
+                                    |> Option.iter(fun (f,og) ->
+                                        f json
+                                        rpcMappings <-
+                                            rpcMappings
+                                            |> Map.remove guid
+                                            |> Map.remove og)
+                                 elif message.StartsWith "E" then
+                                    let guid = (System.Guid.Parse message.[1..])
+                                    rpcMappings
+                                    |> Map.tryFind  guid
+                                    |> Option.iter(fun (f,og) ->
+                                        f (serialize (exn("Server couldn't process your message")))
+                                        rpcMappings <-
+                                            rpcMappings
+                                            |> Map.remove guid
+                                            |> Map.remove og)
+                                 else
+                                    let parsedJson =
+                                        try
+                                            JsonConvert.DeserializeObject<'Msg>(message, settings) |> Ok
+                                        with
+                                        | ex ->
+                                            Error ex.Message
+                                    match parsedJson with
+                                    | Ok msg -> msg |> config.mapping |> dispatch
+                                    | Error er -> eprintfn "%s" er
+                                    return! receiver []
                             else
                                 return! receiver data
                         | _ -> return! receiver buffer
@@ -231,11 +284,7 @@ module Cmd =
 [<AutoOpen>]
 module RPC =
 
-    type IReplyChannel<'T> = {
-      ValueId : System.Guid
-      ExceptionId : System.Guid
-     }
-    with
+    type RPC.IReplyChannel<'T> with
     member t.Reply(v:'T) =
         Bridge.rpcSender(t.ValueId, v, None)
     member t.ReplyNamed(name, v:'T) =
