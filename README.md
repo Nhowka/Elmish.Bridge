@@ -233,6 +233,10 @@ Besides `Program.withBridge`, there is `Program.withBridgeConfig` that can confi
 
 - (Since 3.0) For defining a custom serializer so you aren't limited on sending JSON data through the socket, pass a custom serializer returning `SerializerResult` to `withCustomSerializer`. More on that later.
 
+- (Since 3.4) If you need to get some data before initializing the connection or you only want to enable it if your user does some action, like entering a chat page, you can pass the `BridgeConfig` to `Bridge.asSubscription` to get something that can be passed to `Cmd.ofSub`.
+
+- (Since 5.0) `BridgeConfig` now implements `IDisposable`, closing the connection when `Dispose()` is called. That is useful for using it with some React hooks that close resources when detaching the component.
+
 ## Minimizing shared messages
 
 You can share just a sub-set of the messages between client and server. The message type used by the first argument of `init` and `update` functions on the server is what will be sent, so on the client you can add a mapping from that type for the type used on the client's `init`/`update`.
@@ -412,6 +416,95 @@ let init () =
     None, Cmd.bridgeSendOr (WhatsTheAnswer) (ItIs 42)
 ```
 
+## Reply channels (since 5.0.0)
+
+If before you used some Bridge just to get some data from the server or vice versa, you probably used a message to encode the _asking_ and another to encode the _answering_. Unless you had some sort of identifier for the round-trip, you'd have a bad time knowing which message came from each question. Reply channels aims to help on that specific case, but feel free to get creative!
+
+For the shared part, now both `Elmish.Bridge.Client` and `Elmish.Bridge.Server` has a dependency on `Elmish.Bridge.RPC`. This package has a single record, `IReplyChannel<'T>`. It is inspired by the `AsyncReplyChannel<'Reply>` used on the `MailboxProcessor` when you call `PostAndReply`.
+
+Suppose that before you had a:
+
+```fsharp
+type Server =
+    | AskQuery of QueryParameters
+
+type Client =
+    | QueryAnswer of QueryResult
+```
+
+You could abstract that to a single message:
+
+```fsharp
+open Elmish.Bridge
+
+type Server =
+    | Query of QueryParameters * IReplyChannel<QueryResult>
+```
+
+Client code that before needed to use elmish messages
+
+```fsharp
+let update msg model =
+    match msg with
+    | DoQuery queryParameter ->
+        model, Cmd.bridgeSend (AskQuery queryParameter)
+    | Remote (QueryAnswer result) ->
+        // do something with the result
+```
+
+can be refactored to instead be on `async` expressions:
+
+```fsharp
+let doQuery queryParameter =
+  async {
+    let! result = Bridge.AskServer(fun rc -> AskQuery(queryParameter, rc))
+    /// do something with the result
+  }
+```
+
+
+The client also has a `Bridge.AskNamedServer` for named Bridges.
+
+For the side supposed to answer on the reply channel, the change is not that big:
+
+```fsharp
+let update clientDispatch msg model =
+    match msg with
+    | Remote(AskQuery queryParameter) ->
+        let result = doQuery queryParameter
+        clientDispatch (QueryAnswer result)
+        model, Cmd.none
+```
+
+would turn into:
+
+```fsharp
+let update clientDispatch msg model =
+    match msg with
+    | Remote(AskQuery (queryParameter, replyChannel)) ->
+        let result = doQuery queryParameter
+        replyChannel.Reply result
+        model, Cmd.none
+```
+
+The server can also ask the clients for values. The `ServerHub` was extended with the methods `
+
+- `AskClient`
+  - takes
+    - a `Dispatch<'client>`: same as the one on `update`
+    - an `IReplyChannel<'T> -> 'client`: to build the client message
+  - returns
+    - an `Async<'T>`: with the client's response
+- `AskAllClients`
+  - takes
+    - an `IReplyChannel<'T> -> 'client`: to build the client message
+    - an `Dispatch<'client> -> Dispatch<'server> -> 'T -> unit`: for processing the successful messages. You can use the client dispatch to send new messages to the client and use the server dispatch to add new messages to the server's `update`
+    - an `Dispatch<'client> -> Dispatch<'server> -> exn -> unit`: same as above, but for exceptions
+  - returns `unit`
+- `AskAllClientsIf`
+   - takes
+     - a `model -> bool`: filters so only clients that has something on their models receive the message
+     - same as `AskAllClients`
 
 ## Anything more?
 

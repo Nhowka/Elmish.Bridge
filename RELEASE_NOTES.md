@@ -1,3 +1,6 @@
+#### 5.0.0
+* Use Giraffe stable
+
 #### 5.0.0-rc-9-2
 * Stop socket recreation when disposed
 

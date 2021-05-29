@@ -43,5 +43,5 @@ group Giraffe
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget Giraffe prerelease
+  nuget Giraffe
   nuget Microsoft.AspNetCore.WebSockets
