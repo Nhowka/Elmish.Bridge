@@ -4,7 +4,6 @@ namespace Elmish.Bridge
 module Giraffe =
     open System
     open Giraffe
-    open FSharp.Control.Tasks
     open System.Net.WebSockets
     open Microsoft.AspNetCore.Builder
     open Microsoft.AspNetCore.Http

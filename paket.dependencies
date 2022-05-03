@@ -14,7 +14,7 @@ group Fabulous
   storage: none
   source https://api.nuget.org/v3/index.json
 
-  nuget Fabulous.Core
+  nuget Fabulous
   nuget Fable.Remoting.Json
   nuget System.Net.WebSockets
 

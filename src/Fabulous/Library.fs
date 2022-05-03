@@ -3,7 +3,7 @@ namespace Elmish.Bridge
 open System
 open System.Net.WebSockets
 open System.Threading
-open Fabulous.Core
+open Fabulous
 open Fable.Remoting.Json
 open Newtonsoft.Json
 

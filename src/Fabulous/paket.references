@@ -1,4 +1,4 @@
 group Fabulous
-  Fabulous.Core
+  Fabulous
   Fable.Remoting.Json
   System.Net.WebSockets
