@@ -106,14 +106,14 @@ module Bridge =
             serialize(sprintf "RC|%O" guid, serialize value) |> o )
 
     let internal rpcAsker(f: IReplyChannel<'T> -> 'Server, bridgeName ) =
-        Async.FromContinuations(fun (cont, econt, _) ->
+        Async.FromContinuations(fun (cont: 'T -> unit, econt: exn -> unit, _) ->
             let guidValue = Guid.NewGuid()
             let guidExn = Guid.NewGuid()
             let sentTypeName = typeof<'Server>.FullName.Replace('+','.')
 
 
-            let reply (cont : 'T -> unit) s =
-                JsonConvert.DeserializeObject<'T>(s, settings)  |> cont
+            let reply (cont : 'a -> unit) s =
+                JsonConvert.DeserializeObject<'a>(s, settings)  |> cont
 
             rpcMappings <-
                 rpcMappings
