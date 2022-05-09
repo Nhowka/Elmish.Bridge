@@ -77,12 +77,12 @@ type BridgeConfig<'Msg,'ElmishMsg> =
 
     interface System.IDisposable with
         member t.Dispose() =
-            !Helpers.mappings
+            Helpers.mappings.Value
             |> Option.defaultValue Map.empty
             |> Map.tryFind t.name
             |> Option.iter (fun (_, socket, _) ->
-                let (skt,_) = !socket
-                socket := (None, true)
+                let (skt,_) = socket.Value
+                socket.Value <- (None, true)
                 skt |> Option.iter (fun e -> e.close())
                 )
 
@@ -108,23 +108,23 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                 url.protocol <- url.protocol.Replace("http", "ws")
                 url
         let wsref : (WebSocket option * bool) ref =
-            !Helpers.mappings
+            Helpers.mappings.Value
             |> Option.defaultValue Map.empty
             |> Map.tryFind this.name
             |> Option.bind (fun (_, socket, _) ->
-                match !socket with
+                match socket.Value with
                 | None, true -> None
                 | _ -> Some socket)
             |> Option.defaultValue (ref (None, false))
         let rec websocket timeout server =
-            match !wsref with
+            match wsref.Value with
             | Some _, _ | None, true -> ()
             | None, false ->
                 let socket = WebSocket.Create server
-                wsref := Some socket, false
+                wsref.Value <- Some socket, false
                 socket.onclose <- fun _ ->
-                    let (_,closed) = !wsref
-                    wsref := None, closed
+                    let (_,closed) = wsref.Value
+                    wsref.Value <- None, closed
                     this.whenDown |> Option.iter dispatch
                     if not closed then
                       Dom.window.setTimeout
@@ -134,13 +134,13 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                          if message.StartsWith "R" then
                             let guid = (System.Guid.Parse message.[1..36])
                             let json = message.[37..]
-                            !Helpers.rpcmappings
+                            Helpers.rpcmappings.Value
                             |> Option.defaultValue Map.empty
                             |> Map.tryFind  guid
                             |> Option.iter(fun (f,og) ->
                                 f json
-                                Helpers.rpcmappings :=
-                                    !Helpers.rpcmappings
+                                Helpers.rpcmappings.Value <-
+                                    Helpers.rpcmappings.Value
                                     |> Option.map( fun m  ->
                                         m
                                         |> Map.remove guid
@@ -148,13 +148,13 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                                 )
                          elif message.StartsWith "E" then
                             let guid = (System.Guid.Parse message.[1..])
-                            !Helpers.rpcmappings
+                            Helpers.rpcmappings.Value
                             |> Option.defaultValue Map.empty
                             |> Map.tryFind  guid
                             |> Option.iter(fun (f,og) ->
                                 f (Json.serialize (exn("Server couldn't process your message")))
-                                Helpers.rpcmappings :=
-                                    !Helpers.rpcmappings
+                                Helpers.rpcmappings.Value <-
+                                    Helpers.rpcmappings.Value
                                     |> Option.map( fun m  ->
                                         m
                                         |> Map.remove guid
@@ -166,14 +166,14 @@ type BridgeConfig<'Msg,'ElmishMsg> =
                                 | Ok msg -> msg |> this.mapping |> dispatch
                                 | _ -> ()
         websocket (this.retryTime * 1000) (url.href.TrimEnd '#')
-        Helpers.mappings :=
-            !Helpers.mappings
+        Helpers.mappings.Value <-
+            Helpers.mappings.Value
             |> Option.defaultValue Map.empty
             |> Map.add this.name
                 (this.customSerializers,
                  wsref,
                  (fun e callback ->
-                    match !wsref with
+                    match wsref.Value with
                     | Some socket, _ -> socket.send e
                     | None, _ -> callback ()))
             |> Some
@@ -185,7 +185,7 @@ type Bridge private() =
     static member private Sender(server : 'Server, bridgeName, callback, sentType: System.Type) =
 
         let sentTypeName = sentType.FullName.Replace('+','.')
-        !Helpers.mappings
+        Helpers.mappings.Value
         |> Option.defaultValue Map.empty
         |> Map.tryFind bridgeName
         |> function
@@ -204,7 +204,7 @@ type Bridge private() =
 
     static member private RPCSender(guid, bridgeName, value, sentType: System.Type) =
 
-        !Helpers.mappings
+        Helpers.mappings.Value
         |> Option.defaultValue Map.empty
         |> Map.tryFind bridgeName
         |> Option.iter
@@ -243,15 +243,15 @@ type Bridge private() =
                 let json = SimpleJson.parse s
                 Convert.fromJsonAs json typeInfo |> unbox |> cont
 
-            Helpers.rpcmappings :=
-                !Helpers.rpcmappings
+            Helpers.rpcmappings.Value <-
+                Helpers.rpcmappings.Value
                 |> Option.defaultValue Map.empty
                 |> Map.add guidExn ((fun s -> reply typeInfoExn econt s), guidValue)
                 |> Map.add guidValue ((fun s -> reply typeInfoT cont s), guidExn)
                 |> Some
 
             let sentTypeName = sentType.FullName.Replace('+','.')
-            !Helpers.mappings
+            Helpers.mappings.Value
             |> Option.defaultValue Map.empty
             |> Map.tryFind bridgeName
             |> function

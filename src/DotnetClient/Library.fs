@@ -142,19 +142,19 @@ module Bridge =
     let internal attach (config:BridgeConfig<'Msg,'ElmishMsg>) =
         let dispatcher dispatch =
             let ws : ClientWebSocket option ref = ref None
-            let rec websocket server r =
+            let rec websocket server (r:ClientWebSocket option ref) =
                 lock ws (fun () ->
-                    match !r with
+                    match r.Value with
                     | None ->
                         async {
                             let ws = new ClientWebSocket()
-                            r := Some ws
+                            r.Value <- Some ws
                             try
                                 do! ws.ConnectAsync(Uri(server), CancellationToken.None) |> Async.AwaitTask
                             with
                             | _ ->
                                 (ws :> IDisposable).Dispose()
-                                r := None
+                                r.Value <- None
                                 config.whenDown |> Option.iter dispatch}
                         |> Async.StartImmediate
                     | Some _ -> ())
@@ -165,13 +165,13 @@ module Bridge =
                     do! webs.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null,CancellationToken.None)
                                 |> Async.AwaitTask |> Async.Catch |> Async.Ignore
                     (webs :> IDisposable).Dispose()
-                    ws := None
+                    ws.Value <- None
                     config.whenDown |> Option.iter dispatch
                     do! Async.Sleep (1000 * config.retryTime)
                 }
             let rec receiver buffer =
               async {
-                    match !ws with
+                    match ws.Value with
                     |Some webs when webs.State = WebSocketState.Open ->
                       try
                         let! msg = webs.ReceiveAsync(recBuffer,CancellationToken.None) |> Async.AwaitTask
@@ -215,7 +215,7 @@ module Bridge =
                                     match parsedJson with
                                     | Ok msg -> msg |> config.mapping |> dispatch
                                     | Error er -> eprintfn "%s" er
-                                    return! receiver []
+                                return! receiver []
                             else
                                 return! receiver data
                         | _ -> return! receiver buffer
@@ -237,7 +237,7 @@ module Bridge =
             let sender = MailboxProcessor.Start (fun mb ->
                 let rec loop () = async {
                     let! (msg : string) = mb.Receive()
-                    match !ws with
+                    match ws.Value with
                     | Some ws when ws.State = WebSocketState.Open ->
                       let arr = msg |> System.Text.Encoding.UTF8.GetBytes |> ArraySegment
                       do! ws.SendAsync(arr,WebSocketMessageType.Text, true, CancellationToken.None)
