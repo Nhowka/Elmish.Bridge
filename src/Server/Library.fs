@@ -310,7 +310,7 @@ type ServerHub<'model, 'server, 'client>() =
 
     /// Send server message for all connected users
     default sh.BroadcastServer(msg: 'inner) =
-        sh.SendClientIf (fun _ -> true) msg
+        sh.SendServerIf (fun _ -> true) msg
 
     abstract SendClientIf : ('model -> bool) -> 'inner -> unit
 
