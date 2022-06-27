@@ -60,8 +60,7 @@ type BridgeConfig<'Msg,'ElmishMsg> =
 
     /// Internal use only
     [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
-    member this.AddSerializer(serializer: 'a -> SerializerResult, [<Inject>] ?resolver: ITypeResolver<'a>) =
-        let typeOrigin = resolver.Value.ResolveType()
+    member this.AddSerializer(serializer: 'a -> SerializerResult, typeOrigin: System.Type) =
         let typeOriginName = typeOrigin.FullName.Replace("+",".")
         {
             whenDown = this.whenDown
@@ -182,7 +181,9 @@ type Bridge private() =
 
     static member private stringTuple = (TypeInfo.Tuple(fun () -> [|TypeInfo.String;TypeInfo.String|]))
 
-    static member private Sender(server : 'Server, bridgeName, callback, sentType: System.Type) =
+    /// Internal use only
+    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
+    static member Sender(server : 'Server, bridgeName, callback, sentType: System.Type) =
 
         let sentTypeName = sentType.FullName.Replace('+','.')
         Helpers.mappings.Value
@@ -202,7 +203,9 @@ type Bridge private() =
                         | Binary b -> System.Convert.ToBase64String b
                     s (Convert.serialize (sentTypeName, serialized) Bridge.stringTuple) callback
 
-    static member private RPCSender(guid, bridgeName, value, sentType: System.Type) =
+    /// Internal use only
+    [<System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)>]
+    static member RPCSender(guid, bridgeName, value, sentType: System.Type) =
 
         Helpers.mappings.Value
         |> Option.defaultValue Map.empty
@@ -213,26 +216,26 @@ type Bridge private() =
                     let serialized = Convert.serialize value typeInfo
                     s (Convert.serialize (sprintf "RC|%O" guid, serialized) Bridge.stringTuple) ignore)
 
-    static member RPCSend(guid: System.Guid, value: 'a, ?name, [<Inject>] ?resolver: ITypeResolver<'a>) =
-        Bridge.RPCSender(guid, name, value, resolver.Value.ResolveType())
+    static member inline RPCSend(guid: System.Guid, value: 'a, ?name) =
+        Bridge.RPCSender(guid, name, value, typeof<'a>)
 
     /// Send the message to the server
-    static member Send(server : 'Server,?callback, [<Inject>] ?resolver: ITypeResolver<'Server>) =
-        Bridge.Sender(server, None, defaultArg callback ignore, resolver.Value.ResolveType())
+    static member inline Send(server : 'Server,?callback) =
+        Bridge.Sender(server, None, defaultArg callback ignore, typeof<'Server>)
 
     /// Send the message to the server using a named bridge
-    static member NamedSend(name:string, server : 'Server,?callback, [<Inject>] ?resolver: ITypeResolver<'Server>) =
-        Bridge.Sender(server, Some name, defaultArg callback ignore, resolver.Value.ResolveType())
+    static member inline NamedSend(name:string, server : 'Server,?callback) =
+        Bridge.Sender(server, Some name, defaultArg callback ignore, typeof<'Server>)
 
 
-    static member AskServer(f: IReplyChannel<'T> -> 'Server, [<Inject>] ?resolverT: ITypeResolver<'T>, [<Inject>] ?resolverServer: ITypeResolver<'Server> ) : Async<'T> =
-        Bridge.Asker(f, None, resolverServer.Value.ResolveType(), resolverT.Value.ResolveType() )
+    static member inline AskServer(f: IReplyChannel<'T> -> 'Server ) : Async<'T> =
+        Bridge.Asker(f, None, typeof<'Server>, typeof<'T> )
 
-    static member AskNamedServer(f: IReplyChannel<'T> -> 'Server, name, [<Inject>] ?resolverT: ITypeResolver<'T>, [<Inject>] ?resolverServer: ITypeResolver<'Server> ) : Async<'T> =
-        Bridge.Asker(f, Some name, resolverServer.Value.ResolveType(), resolverT.Value.ResolveType() )
+    static member inline AskNamedServer(f: IReplyChannel<'T> -> 'Server, name ) : Async<'T> =
+        Bridge.Asker(f, Some name, typeof<'Server>, typeof<'T>  )
 
 
-    static member private Asker(f, bridgeName, sentType, ttype ) =
+    static member Asker(f, bridgeName, sentType, ttype ) =
         Async.FromContinuations(fun (cont, econt, _) ->
             let guidValue = System.Guid.NewGuid()
             let guidExn = System.Guid.NewGuid()
@@ -294,7 +297,7 @@ module Bridge =
 
     /// Register a custom serializer
     let inline withCustomSerializer (serializer: 'a -> SerializerResult) (this:BridgeConfig<'Msg,'ElmishMsg>) =
-        this.AddSerializer serializer
+        this.AddSerializer(serializer, typeof<'a>)
 
     /// Configure how many seconds before reconnecting when the connection is lost.
     /// Values below 1 are ignored
