@@ -23,9 +23,11 @@ module Giraffe =
                                 s
                                 |> System.Text.Encoding.UTF8.GetBytes
                                 |> ArraySegment
-                            webSocket.SendAsync
-                                (resp, WebSocketMessageType.Text, true,
-                                 CancellationToken.None) |> Async.AwaitTask)
+                            task {
+                              if webSocket.State = WebSocketState.Open || webSocket.State = WebSocketState.CloseReceived then
+                                do! webSocket.SendAsync
+                                     (resp, WebSocketMessageType.Text, true,
+                                       CancellationToken.None)} |> Async.AwaitTask)
                     let skt =
                         task {
                             let buffer = Array.zeroCreate 4096

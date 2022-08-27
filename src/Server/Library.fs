@@ -271,14 +271,27 @@ type ServerHub<'model, 'server, 'client>() =
         | DropClient (guid) -> (data |> Map.remove guid, callbacks), Cmd.none
 
 
-    let mutable dispatcher = None
+    let mb =
+                MailboxProcessor.Start (fun mb ->
+                    let rec loop dispatcher = async {
+                        match! mb.Receive() with
+                        | Choice1Of2 msg ->
+                            dispatcher |> Option.iter(fun d -> d msg)
+                            return! loop dispatcher
+                        | Choice2Of2 dispatcher ->
+                            return! loop (Some dispatcher)
+                    }
+                    loop None
+                )
+
+    let dispatcher = fun msg -> mb.Post (Choice1Of2 msg)
 
     do
         Program.mkProgram init update (fun _ _ _ -> ())
         |> Program.withSyncDispatch
             (fun d ->
-                dispatcher <- Some d
-                d)
+                mb.Post (Choice2Of2 d)
+                dispatcher)
         |> Program.run
 
 
@@ -322,7 +335,7 @@ type ServerHub<'model, 'server, 'client>() =
             (fun f ->
                 (predicate, f msg)
                 |> ClientSendIf
-                |> (dispatcher |> Option.defaultValue ignore))
+                |> dispatcher)
 
     abstract SendServerIf : ('model -> bool) -> 'inner -> unit
 
@@ -334,17 +347,14 @@ type ServerHub<'model, 'server, 'client>() =
             (fun f ->
                 (predicate, f msg)
                 |> ServerSendIf
-                |> (dispatcher |> Option.defaultValue ignore))
+                |> dispatcher)
 
     abstract GetModels : unit -> 'model list
 
     /// Return the model of all connected users
     default __.GetModels() =
         Async.FromContinuations
-            (fun (cont, _, _) ->
-                match dispatcher with
-                | Some d -> d (GetModels cont)
-                | None -> cont [])
+            (fun (cont, _, _) -> dispatcher (GetModels cont))
         |> Async.RunSynchronously
 
     abstract AskClient: Dispatch<'client> -> (IReplyChannel<'T> -> 'client) -> Async<'T>
@@ -356,14 +366,11 @@ type ServerHub<'model, 'server, 'client>() =
                 let guidValue = System.Guid.NewGuid()
                 let guidExn = System.Guid.NewGuid()
 
-                match dispatcher with
-                | Some d ->
-                    AddRPCCalback(
+                AddRPCCalback(
                         (guidValue, fun e -> Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<'T>, Helpers.converter) :?> 'T |> cont),
                         (guidExn, fun e -> Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<exn>, Helpers.converter) :?> exn |> econt))
-                    |> d
-                    clientDispatcher (f {ValueId = guidValue; ExceptionId = guidExn})
-                | None -> econt (exn("Hub not initalized")))
+                |> dispatcher
+                clientDispatcher (f {ValueId = guidValue; ExceptionId = guidExn}))
 
     abstract AskAllClients:
         (IReplyChannel<'T> -> 'client) ->
@@ -391,26 +398,21 @@ type ServerHub<'model, 'server, 'client>() =
         (f: IReplyChannel<'T> -> 'client)
         (onValue: Dispatch<'client> -> Dispatch<'server> -> 'T -> unit)
         (onException: Dispatch<'client> -> Dispatch<'server> -> exn -> unit) =
-            match dispatcher with
-            | None -> ()
-            | Some d ->
-                AskAllClientsIf(
-                    predicate,
-                    (fun () ->
-                        let guidValue = System.Guid.NewGuid()
-                        let guidExn = System.Guid.NewGuid()
-                        f {ValueId = guidValue; ExceptionId = guidExn}, guidValue, guidExn),
-                    (fun s c e ->
-                        let t = Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<'T>, Helpers.converter) :?> 'T
-                        onValue s c t),
-                    (fun s c e ->
-                        let t = Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<exn>, Helpers.converter) :?> exn
-                        onException s c t)) |> d
+            AskAllClientsIf(
+                predicate,
+                (fun () ->
+                    let guidValue = System.Guid.NewGuid()
+                    let guidExn = System.Guid.NewGuid()
+                    f {ValueId = guidValue; ExceptionId = guidExn}, guidValue, guidExn),
+                (fun s c e ->
+                    let t = Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<'T>, Helpers.converter) :?> 'T
+                    onValue s c t),
+                (fun s c e ->
+                    let t = Newtonsoft.Json.JsonConvert.DeserializeObject(e, typeof<exn>, Helpers.converter) :?> exn
+                    onException s c t)) |> dispatcher
 
     member private __.TreatReply(guid, body) =
-        dispatcher
-        |> Option.iter
-            (fun d -> d (CallCallback(guid, body)))
+        dispatcher (CallCallback(guid, body))
 
     static member internal TreatReply(sh: ServerHub<'model, 'server, 'client> option, guid, body) =
         sh
@@ -421,7 +423,7 @@ type ServerHub<'model, 'server, 'client>() =
 
         let add =
             fun model serverDispatch clientDispatch ->
-                (dispatcher |> Option.defaultValue ignore)
+                dispatcher
                     (
                         AddClient(
                             guid,
@@ -432,10 +434,10 @@ type ServerHub<'model, 'server, 'client>() =
                     )
 
         let remove =
-            fun () -> (dispatcher |> Option.defaultValue ignore) (DropClient guid)
+            fun () -> dispatcher (DropClient guid)
 
         let update =
-            fun model -> (dispatcher |> Option.defaultValue ignore) (UpdateModel(guid, model))
+            fun model -> dispatcher (UpdateModel(guid, model))
 
         { Add = add
           Remove = remove
@@ -704,7 +706,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
             |> Program.withSyncDispatch
                 (fun d ->
                     mb.Post (Choice2Of2 d)
-                    fun msg -> mb.Post (Choice1Of2 msg))
+                    dispatch)
             |> Program.withSetState (fun model _ -> hubInstance.Update model)
             |> Program.withSubscription
                 (fun model ->
