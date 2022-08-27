@@ -685,24 +685,37 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
 
                     model, Cmd.ofSub (fun _ -> hubInstance.Remove())
 
-            let mutable dispatch = None
+            let mb =
+                MailboxProcessor.Start (fun mb ->
+                    let rec loop dispatcher = async {
+                        match! mb.Receive() with
+                        | Choice1Of2 msg ->
+                            dispatcher |> Option.iter(fun d -> d msg)
+                            return! loop dispatcher
+                        | Choice2Of2 dispatcher ->
+                            return! loop (Some dispatcher)
+                    }
+                    loop None
+                )
+
+            let dispatch: Dispatch<'server option> = fun msg -> mb.Post (Choice1Of2 msg)
 
             Program.mkProgram (innerInit clientDispatch) (innerUpdate clientDispatch) (fun _ _ _ -> ())
             |> Program.withSyncDispatch
                 (fun d ->
-                    dispatch <- Some d
-                    d)
+                    mb.Post (Choice2Of2 d)
+                    fun msg -> mb.Post (Choice1Of2 msg))
             |> Program.withSetState (fun model _ -> hubInstance.Update model)
             |> Program.withSubscription
                 (fun model ->
                     try
-                        hubInstance.Add model (fun m -> dispatch |> Option.iter (fun d -> d (Some m))) clientDispatch
+                        hubInstance.Add model (fun m -> dispatch (Some m)) clientDispatch
                         subscribe model
                     with _ -> Cmd.none)
             |> Program.runWith arg
 
-            read (action >> Async.Start) (Some >> (dispatch |> Option.defaultValue ignore)),
-            (fun () -> dispatch |> Option.iter (fun d -> d None))
+            read (action >> Async.Start) (Some >> dispatch),
+            (fun () -> dispatch None)
 
         server endpoint inbox
 
