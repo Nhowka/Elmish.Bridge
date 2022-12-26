@@ -4,6 +4,24 @@ open Elmish
 open Newtonsoft.Json
 open Fable.Remoting.Json
 
+[<RequireQualifiedAccess>]
+module Cmd =
+        module OfAsyncWith =
+            /// Command that will evaluate an async block to the message
+            let result (start: Async<unit> -> unit)
+                    (task: Async<'msg>) : Cmd<'msg> =
+                let bind dispatch =
+                    async {
+                        let! r = task
+                        dispatch r
+                    }
+                [bind >> start]
+
+        module OfAsync =
+            /// Command that will evaluate an async block to the message
+            let inline result (task: Async<'msg>) : Cmd<'msg> =
+                OfAsyncWith.result Cmd.OfAsync.start task
+
 module internal Helpers =
     open FSharp.Reflection
 
@@ -288,11 +306,10 @@ type ServerHub<'model, 'server, 'client>() =
 
     do
         Program.mkProgram init update (fun _ _ _ -> ())
-        |> Program.withSyncDispatch
+        |> Program.runWithDispatch
             (fun d ->
                 mb.Post (Choice2Of2 d)
-                dispatcher)
-        |> Program.run
+                dispatcher) ()
 
 
     /// Register the client mappings so inner messages can be transformed to the top-level `update` message
@@ -456,9 +473,13 @@ type BridgeDeserializer<'server> =
 
 
 
+
+
 /// Defines server configuration
 type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init, update) =
-    let mutable subscribe = fun _ -> Cmd.none
+    let emptyDispose = {new System.IDisposable with member _.Dispose() = ()}
+
+    let mutable subscribe : 'model -> Sub<'server option> = fun _ -> [[], fun _ -> emptyDispose]
     let mutable logMsg = ignore
     let mutable logRegister = ignore
     let mutable logSMsg = ignore
@@ -585,12 +606,6 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
     /// Subscribe to external source of events.
     /// The subscription is called once - with the initial model, but can dispatch new messages at any time.
     member this.WithSubscription sub =
-        let oldSubscribe = subscribe
-
-        let sub model =
-            Cmd.batch [ oldSubscribe model
-                        sub model ]
-
         subscribe <- sub
         this
 
@@ -685,7 +700,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
                             let model, _ = update clientDispatch msg model
                             logModel model)
 
-                    model, Cmd.ofSub (fun _ -> hubInstance.Remove())
+                    model, Cmd.ofEffect (fun _ -> hubInstance.Remove())
 
             let mb =
                 MailboxProcessor.Start (fun mb ->
@@ -703,18 +718,18 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
             let dispatch: Dispatch<'server option> = fun msg -> mb.Post (Choice1Of2 msg)
 
             Program.mkProgram (innerInit clientDispatch) (innerUpdate clientDispatch) (fun _ _ _ -> ())
-            |> Program.withSyncDispatch
-                (fun d ->
-                    mb.Post (Choice2Of2 d)
-                    dispatch)
+
+
             |> Program.withSetState (fun model _ -> hubInstance.Update model)
             |> Program.withSubscription
                 (fun model ->
                     try
                         hubInstance.Add model (fun m -> dispatch (Some m)) clientDispatch
                         subscribe model
-                    with _ -> Cmd.none)
-            |> Program.runWith arg
+                    with _ -> [[], fun _ -> emptyDispose])
+            |> Program.runWithDispatch (fun d ->
+                    mb.Post (Choice2Of2 d)
+                    dispatch) arg
 
             read (action >> Async.Start) (Some >> dispatch),
             (fun () -> dispatch None)
