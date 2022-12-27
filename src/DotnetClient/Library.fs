@@ -111,7 +111,6 @@ module Bridge =
             let guidExn = Guid.NewGuid()
             let sentTypeName = typeof<'Server>.FullName.Replace('+','.')
 
-
             let reply (cont : 'a -> unit) s =
                 JsonConvert.DeserializeObject<'a>(s, settings)  |> cont
 
@@ -139,25 +138,26 @@ module Bridge =
     let AskNamedServer(f: IReplyChannel<'T> -> 'Server, name) : Async<'T> =
         rpcAsker(f, Some name)
 
+
     let internal attach (config:BridgeConfig<'Msg,'ElmishMsg>) =
+        let ws : (ClientWebSocket option * bool)  ref = ref (None, false)
         let dispatcher dispatch =
-            let ws : ClientWebSocket option ref = ref None
-            let rec websocket server (r:ClientWebSocket option ref) =
+            let rec websocket server (r:(ClientWebSocket option * bool) ref) =
                 lock ws (fun () ->
                     match r.Value with
-                    | None ->
+                    | None, false ->
                         async {
                             let ws = new ClientWebSocket()
-                            r.Value <- Some ws
+                            r.Value <- Some ws, false
                             try
                                 do! ws.ConnectAsync(Uri(server), CancellationToken.None) |> Async.AwaitTask
                             with
                             | _ ->
                                 (ws :> IDisposable).Dispose()
-                                r.Value <- None
+                                r.Value <- None, false
                                 config.whenDown |> Option.iter dispatch}
                         |> Async.StartImmediate
-                    | Some _ -> ())
+                    | Some _, _ | None, true -> ())
             websocket config.path ws
             let recBuffer = ArraySegment(Array.zeroCreate 4096)
             let cleanSocket (webs : ClientWebSocket) =
@@ -165,14 +165,14 @@ module Bridge =
                     do! webs.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null,CancellationToken.None)
                                 |> Async.AwaitTask |> Async.Catch |> Async.Ignore
                     (webs :> IDisposable).Dispose()
-                    ws.Value <- None
+                    ws.Value <- None, false
                     config.whenDown |> Option.iter dispatch
                     do! Async.Sleep (1000 * config.retryTime)
                 }
             let rec receiver buffer =
               async {
                     match ws.Value with
-                    |Some webs when webs.State = WebSocketState.Open ->
+                    | Some webs, _ when webs.State = WebSocketState.Open ->
                       try
                         let! msg = webs.ReceiveAsync(recBuffer,CancellationToken.None) |> Async.AwaitTask
                         match msg.MessageType,recBuffer.Array.[0..msg.Count-1],msg.EndOfMessage,msg.CloseStatus with
@@ -223,13 +223,13 @@ module Bridge =
                       | _ ->
                             do! cleanSocket webs
                             return! receiver []
-                    | Some webs when webs.State = WebSocketState.Connecting ->
+                    | Some webs, _ when webs.State = WebSocketState.Connecting ->
                         do! Async.Sleep (1000 * config.retryTime)
                         return! receiver []
-                    | Some webs ->
+                    | Some webs, _ ->
                         do! cleanSocket webs
                         return! receiver []
-                    | None ->
+                    | None, _ ->
                         websocket config.path ws
                         return! receiver []
                 }
@@ -238,12 +238,12 @@ module Bridge =
                 let rec loop () = async {
                     let! (msg : string) = mb.Receive()
                     match ws.Value with
-                    | Some ws when ws.State = WebSocketState.Open ->
+                    | Some ws, _ when ws.State = WebSocketState.Open ->
                       let arr = msg |> System.Text.Encoding.UTF8.GetBytes |> ArraySegment
                       do! ws.SendAsync(arr,WebSocketMessageType.Text, true, CancellationToken.None)
                         |> Async.AwaitTask |> Async.Catch |> Async.Ignore
                       return! loop()
-                    | Some ws when ws.State = WebSocketState.Connecting ->
+                    | Some ws, _ when ws.State = WebSocketState.Connecting ->
                       do! Async.Sleep 1000
                       return! loop()
                     | _ ->
@@ -252,12 +252,23 @@ module Bridge =
                 loop ()
                 )
             mappings <- mappings |> Map.add config.name (config.customSerializers,sender.Post)
-        dispatcher
+        fun dispatch ->
+            dispatcher dispatch
+            { new IDisposable with
+                member _.Dispose() =
+                    match ws.Value with
+                    | Some webs, _ when webs.State = WebSocketState.Open ->
+                        ws.Value <- None, true
+                        use w = webs
+                        w.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null,CancellationToken.None)
+                                |> Async.AwaitTask |> Async.Catch |> Async.Ignore |> Async.RunSynchronously
+                    | _ -> ws.Value <- None, true
+            }
 
     /// Creates a subscription to be used with `Cmd.OfSub`. That enables starting Bridge with
-    /// a  configuration after the `Program` has already started
-    let asSubscription (this:BridgeConfig<_,_>) : Sub<_> =
-        attach this
+    /// a configuration after the `Program` has already started
+    let asSubscription (this:BridgeConfig<_,_>) =
+       fun dispatch -> attach this dispatch |> ignore
 
 
 [<RequireQualifiedAccess>]
@@ -266,12 +277,12 @@ module Program =
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let withBridge endpoint (program : Program<_, _, _, _>) =
-        program |> Program.withSubscription (fun _ -> [Bridge.attach (Bridge.endpoint endpoint)])
+        program |> Program.withSubscription (fun _ -> [["Elmish";"Bridge"], fun dispatch -> let config = (Bridge.endpoint endpoint) in Bridge.attach config dispatch])
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
-        program |> Program.withSubscription (fun _ -> [Bridge.attach config])
+        program |> Program.withSubscription (fun _ -> ["Elmish"::"Bridge"::(config.name |> Option.map List.singleton |> Option.defaultValue []), fun dispatch -> Bridge.attach config dispatch])
 
 
 [<RequireQualifiedAccess>]

@@ -325,18 +325,23 @@ module Bridge =
     let inline asSubscription (this:BridgeConfig<_,_>) dispatch =
         this.Attach dispatch
 
+    /// Enables using Elmish.Bridge with any function that can receive compatible messages.
+    /// This includes React hooks, Lit and Svelte
+    let inline onCustomDispatcher dispatch (this:BridgeConfig<_,_>) =
+        this.Attach dispatch
+
 [<RequireQualifiedAccess>]
 module Program =
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridge endpoint (program : Program<_, _, _, _>) =
-        program |> Program.withSubscription (fun _ -> [Bridge.endpoint(endpoint).Attach])
+        program |> Program.withSubscription (fun _ -> [["Elmish";"Bridge"], fun dispatch -> let config = Bridge.endpoint(endpoint) in config.Attach dispatch; config ])
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
-       program |> Program.withSubscription (fun _ -> [config.Attach])
+       program |> Program.withSubscription (fun _ -> ["Elmish"::"Bridge"::(config.name |> Option.map List.singleton |> Option.defaultValue []), fun dispatch -> config.Attach dispatch; config])
 
 [<RequireQualifiedAccess>]
 module Cmd =
