@@ -479,7 +479,7 @@ type BridgeDeserializer<'server> =
 type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init, update) =
     let emptyDispose = {new System.IDisposable with member _.Dispose() = ()}
 
-    let mutable subscribe : 'model -> Sub<'server option> = fun _ -> [[], fun _ -> emptyDispose]
+    let mutable subscribe : 'model -> Sub<'server> = fun _ -> [[], fun _ -> emptyDispose]
     let mutable logMsg = ignore
     let mutable logRegister = ignore
     let mutable logSMsg = ignore
@@ -725,7 +725,7 @@ type BridgeServer<'arg, 'model, 'server, 'client, 'impl>(endpoint: string, init,
                 (fun model ->
                     try
                         hubInstance.Add model (fun m -> dispatch (Some m)) clientDispatch
-                        subscribe model
+                        subscribe model |> List.map (fun (tag, g) -> tag, (fun dispatch -> Some >> dispatch) >> g)
                     with _ -> [[], fun _ -> emptyDispose])
             |> Program.runWithDispatch (fun d ->
                     mb.Post (Choice2Of2 d)
