@@ -277,12 +277,12 @@ module Program =
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let withBridge endpoint (program : Program<_, _, _, _>) =
-        program |> Program.withSubscription (fun _ -> [["Elmish";"Bridge"], fun dispatch -> let config = (Bridge.endpoint endpoint) in Bridge.attach config dispatch])
+        program |> Program.mapSubscription (fun prev m -> (prev m) @ [["Elmish";"Bridge"], fun dispatch -> let config = (Bridge.endpoint endpoint) in Bridge.attach config dispatch])
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
-        program |> Program.withSubscription (fun _ -> ["Elmish"::"Bridge"::(config.name |> Option.map List.singleton |> Option.defaultValue []), fun dispatch -> Bridge.attach config dispatch])
+        program |> Program.mapSubscription(fun prev m -> (prev m) @ ["Elmish"::"Bridge"::(config.name |> Option.map List.singleton |> Option.defaultValue []), fun dispatch -> Bridge.attach config dispatch])
 
 
 [<RequireQualifiedAccess>]

@@ -336,12 +336,12 @@ module Program =
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridge endpoint (program : Program<_, _, _, _>) =
-        program |> Program.withSubscription (fun _ -> [["Elmish";"Bridge"], fun dispatch -> let config = Bridge.endpoint(endpoint) in config.Attach dispatch; config ])
+        program |> Program.mapSubscription (fun prev m -> (prev m) @ [["Elmish";"Bridge"], fun dispatch -> let config = Bridge.endpoint(endpoint) in config.Attach dispatch; config ])
 
     /// Apply the `Bridge` to be used with the program.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
-       program |> Program.withSubscription (fun _ -> ["Elmish"::"Bridge"::(config.name |> Option.map List.singleton |> Option.defaultValue []), fun dispatch -> config.Attach dispatch; config])
+       program |> Program.mapSubscription (fun prev m -> (prev m) @ ["Elmish"::"Bridge"::(config.name |> Option.map List.singleton |> Option.defaultValue []), fun dispatch -> config.Attach dispatch; config])
 
 [<RequireQualifiedAccess>]
 module Cmd =
