@@ -1,3 +1,9 @@
+#### 7.0.1
+* Avoid replacing Elmish subscriptions
+
+#### 7.0.0
+* Use Elmish v4
+
 #### 5.0.0
 * Use Giraffe stable
 
