@@ -7,7 +7,7 @@ Formely Elmish.Remoting. This library creates a bridge between server and client
 | Library  | Version |
 | -------- | ------- |
 | Elmish.Bridge.Client  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Client.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Client) |
-| Elmish.Bridge.Fabulous  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Fabulous.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Fabulous) |
+| Elmish.Bridge.DotnetClient  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.DotnetClient.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.DotnetClient) |
 | Elmish.Bridge.Suave  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Suave.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Suave)  |
 | Elmish.Bridge.Giraffe  | [![Nuget](https://img.shields.io/nuget/v/Elmish.Bridge.Giraffe.svg?colorB=green)](https://www.nuget.org/packages/Elmish.Bridge.Giraffe)  |
 
@@ -290,7 +290,7 @@ Sometimes you may need that path to be relative with the current URL. Maybe you 
 - `Raw`: Uses the defined path as a complete URL.
 - `Calculated`: Takes an extra function `(string -> string -> string)`. The functions arguments are the current URL and the endpoint defined, returning the resulting URL.
 
-As Fabulous runs outside the browser the endpoint is assumed to be raw. Pay attention to the protocol and use `ws://` or `wss://` to connect.
+As DotnetClient runs outside the browser the endpoint is assumed to be raw. Pay attention to the protocol and use `ws://` or `wss://` to connect.
 
 ## Webpack caveat
 
