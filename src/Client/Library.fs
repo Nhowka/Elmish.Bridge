@@ -322,8 +322,11 @@ module Bridge =
 
     /// Creates a subscription to be used with `Cmd.OfSub`. That enables starting Bridge with
     /// a configuration obtained after the `Program` has already started
-    let inline asSubscription (this:BridgeConfig<_,_>) dispatch =
-        this.Attach dispatch
+    let inline asSubscription (this:BridgeConfig<_,_>) =
+        let sub dispatch =
+            this.Attach dispatch
+            {new System.IDisposable with member _.Dispose() = ()}
+        [ ["Elmish";"Bridge"], sub ]
 
     /// Enables using Elmish.Bridge with any function that can receive compatible messages.
     /// This includes React hooks, Lit and Svelte
