@@ -320,13 +320,18 @@ module Bridge =
             urlMode = this.urlMode
         }
 
-    /// Creates a subscription to be used with `Cmd.OfSub`. That enables starting Bridge with
-    /// a configuration obtained after the `Program` has already started
-    let inline asSubscription (this:BridgeConfig<_,_>) =
-        let sub dispatch =
-            this.Attach dispatch
-            {new System.IDisposable with member _.Dispose() = ()}
-        [ ["Elmish";"Bridge"], sub ]
+    /// Creates an effect to be used with `Cmd.OfEffect`. That enables starting Bridge with
+    /// a configuration obtained after the `Program` has already started. If you want to use 
+    /// it with the Elmish v4 subscription, use `Bridge.asModelConfigSubscription`
+    let inline asSubscription (this:BridgeConfig<_,_>) dispatch =
+        this.Attach dispatch
+
+    /// Creates a subscription compatible with Elmish v4. Takes a function that returns an optional `BridgeConfig` based on the model.
+    /// If the function returns `None`, the subscription is not started. If it returns `Some`, the subscription is started with the resulting configuration.
+    let inline asModelConfigSubscription (configurator: 'model -> BridgeConfig<_,_> option) model : Sub<'msg> =
+       configurator model 
+       |> Option.map(fun config -> ("Elmish"::"Bridge"::(Option.toList config.name), fun dispatch -> config.Attach dispatch; config :> System.IDisposable))
+       |> Option.toList
 
     /// Enables using Elmish.Bridge with any function that can receive compatible messages.
     /// This includes React hooks, Lit and Svelte
@@ -335,16 +340,21 @@ module Bridge =
 
 [<RequireQualifiedAccess>]
 module Program =
-
-    /// Apply the `Bridge` to be used with the program.
+    /// Apply the `Bridge` to be used with the program using a function that returns an optional `BridgeConfig` taking the model.
+    /// If the function returns `None`, the subscription is not started. If it returns `Some`, the subscription is started with the resulting configuration.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
-    let inline withBridge endpoint (program : Program<_, _, _, _>) =
-        program |> Program.mapSubscription (fun prev m -> (["Elmish";"Bridge"], fun dispatch -> let config = Bridge.endpoint(endpoint) in config.Attach dispatch; config ) :: (prev m))
+    let inline withBridgeConfigurator (config: _ -> BridgeConfig<_,_> option) (program : Program<_, _, _, _>) =
+       program |> Program.mapSubscription (fun prev m -> Bridge.asModelConfigSubscription config m @ prev m)    
 
-    /// Apply the `Bridge` to be used with the program.
+    /// Apply the `Bridge` to be used with the program using the `BridgeConfig` as argument.
     /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
     let inline withBridgeConfig (config:BridgeConfig<_,_>) (program : Program<_, _, _, _>) =
-       program |> Program.mapSubscription (fun prev m -> ("Elmish"::"Bridge"::(config.name |> Option.map List.singleton |> Option.defaultValue []), fun dispatch -> config.Attach dispatch; config) :: (prev m))
+       program |> withBridgeConfigurator (fun _ -> Some config)  
+
+    /// Apply the `Bridge` to be used with the program using the endpoint as argument.
+    /// Preferably use it before any other operation that can change the type of the message passed to the `Program`.
+    let inline withBridge endpoint (program : Program<_, _, _, _>) =
+        program |> withBridgeConfig (Bridge.endpoint(endpoint)) 
 
 [<RequireQualifiedAccess>]
 module Cmd =
