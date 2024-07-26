@@ -28,15 +28,21 @@ module Suave =
                     while loop do
                         let! msg = webSocket.read()
                         match msg with
-                        | Text, data, complete ->
-                            buffer <- data :: buffer
+                        | (Continuation | Text), data, complete 
                             if complete then
-                                buffer
-                                |> List.rev
-                                |> Array.concat
+                                let completeData =
+                                    match buffer with
+                                    | [] -> data
+                                    | xs ->
+                                        buffer <- []
+                                        (data :: xs) |> List.rev |> Array.concat
+
+                                completeData
                                 |> UTF8.toString
                                 |> sender
-                                buffer <- []
+                            else
+                                buffer <- data :: buffer
+                                
                         | (Close, _, _) ->
                             let emptyResponse = [||] |> ByteSegment
                             do! webSocket.send Close emptyResponse true
