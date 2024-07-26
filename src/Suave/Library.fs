@@ -28,8 +28,7 @@ module Suave =
                     while loop do
                         let! msg = webSocket.read()
                         match msg with
-                        | Continuation, data, complete 
-                        | Text, data, complete ->
+                        | (Continuation | Text), data, complete 
                             if complete then
                                 let completeData =
                                     match buffer with
@@ -48,12 +47,7 @@ module Suave =
                             let emptyResponse = [||] |> ByteSegment
                             do! webSocket.send Close emptyResponse true
                             loop <- false
-                        | _ ->
-#if DEBUG
-                            let msg = sprintf "Unhandled message: %A" msg
-                            System.Diagnostics.Debugger.Break()
-#endif
-                            ()
+                        | _ -> ()
                 }
 
             async {
